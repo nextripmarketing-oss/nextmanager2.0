@@ -1,0 +1,91 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Outfit", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  body {
+    @apply font-sans bg-[#f8fafc] dark:bg-slate-950 text-slate-900 dark:text-slate-100 antialiased selection:bg-blue-500/20 dark:selection:bg-blue-500/30 selection:text-blue-900 dark:selection:text-blue-100;
+  }
+}
+
+.bento-card {
+  @apply bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-slate-200/60 dark:border-slate-800/60 rounded-[2rem] p-6 transition-all duration-500;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px -1px rgba(0, 0, 0, 0.02), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+.dark .bento-card {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.bento-card:hover {
+  @apply border-blue-500/30 dark:border-blue-500/40 shadow-2xl shadow-blue-500/10 dark:shadow-blue-500/20 -translate-y-1 bg-white dark:bg-slate-900;
+}
+
+.data-row {
+  @apply transition-all duration-300;
+}
+
+.data-row:hover {
+  @apply bg-blue-50/40 dark:bg-slate-800/60;
+}
+
+/* Beautiful custom glassy overlay */
+.glass-overlay {
+  @apply bg-white/60 dark:bg-slate-900/60 backdrop-blur-2xl border border-white/80 dark:border-slate-800/80;
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+}
+.dark .glass-overlay {
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+}
+
+/* Ultra smooth inputs */
+input, select, textarea {
+  @apply transition-all duration-300 text-slate-800 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500;
+}
+
+/* Global Dark Mode Overrides for Hardcoded Utility Classes */
+.dark .text-slate-900 { color: var(--color-slate-100); }
+.dark .text-slate-800 { color: var(--color-slate-200); }
+.dark .text-slate-700 { color: var(--color-slate-300); }
+.dark .text-slate-600 { color: var(--color-slate-400); }
+.dark .bg-white { background-color: var(--color-slate-900); }
+.dark .bg-slate-50 { background-color: var(--color-slate-800); }
+.dark .bg-slate-100 { background-color: var(--color-slate-800); }
+.dark .border-slate-200 { border-color: var(--color-slate-700); }
+.dark .border-slate-100 { border-color: var(--color-slate-800); }
+.dark .bg-white\/80 { background-color: rgba(15, 23, 42, 0.8); }
+.dark .bg-white\/90 { background-color: rgba(15, 23, 42, 0.9); }
+.dark .bento-card { background-color: rgba(15, 23, 42, 0.8); border-color: rgba(51, 65, 85, 0.6); }
+
+/* Soft shimmer or pulse gradient */
+@keyframes delicate-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.shimmer-bg {
+  background: linear-gradient(90deg, #f8fafc 25%, #f1f5f9 50%, #f8fafc 75%);
+  background-size: 200% 100%;
+  animation: delicate-shimmer 2.5s infinite linear;
+}
+
+/* Smooth gradients for text */
+.text-gradient {
+  @apply bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600;
+}
+
+@layer utilities {
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}

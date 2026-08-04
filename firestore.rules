@@ -1,0 +1,237 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper Functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == "nextripmarketing@gmail.com" ||
+        request.auth.token.email == "anisurkp1966@gmail.com" ||
+        request.auth.token.email == "admin@123.com" ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Admin")
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Passenger Validation
+    function isValidPassenger(data) {
+      let statusOptions = [
+        "Passport Submit", 
+        "Medical Done", 
+        "Workpermit Issue", 
+        "Visa Online", 
+        "Embassy Submit", 
+        "Visa Reject", 
+        "Passport Return",
+        "Manpower Done",
+        "Flight Done",
+        "Processing Cancelled",
+        "Others"
+      ];
+      
+      let isAuthorizedCreator = isSignedIn();
+
+      return data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
+             isAuthorizedCreator &&
+             (!('phone' in data) || data.phone == null || data.phone is string) &&
+             (!('status' in data) || data.status in statusOptions) &&
+             (!('inOut' in data) || data.inOut == null || data.inOut is string) &&
+             (!('history' in data) || data.history == null || data.history is list) &&
+             (!('country' in data) || data.country == null || data.country is string);
+    }
+
+    // GLOBAL DENY
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Users Collection
+    match /users/{uid} {
+      allow get: if isSignedIn() && (
+        request.auth.uid == uid || 
+        request.auth.token.email == "nextripmarketing@gmail.com" ||
+        request.auth.token.email == "anisurkp1966@gmail.com" ||
+        request.auth.token.email == "admin@123.com" ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Admin")
+      );
+      
+      allow list: if isSignedIn() && (
+        request.auth.token.email == "nextripmarketing@gmail.com" ||
+        request.auth.token.email == "anisurkp1966@gmail.com" ||
+        request.auth.token.email == "admin@123.com" ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Admin")
+      );
+
+      allow create: if isSignedIn() && request.auth.uid == uid;
+      
+      allow update: if isSignedIn() && (
+        request.auth.uid == uid || 
+        request.auth.token.email == "nextripmarketing@gmail.com" ||
+        request.auth.token.email == "anisurkp1966@gmail.com" ||
+        request.auth.token.email == "admin@123.com" ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Admin")
+      );
+      
+      allow delete: if isSignedIn() && (
+        request.auth.token.email == "nextripmarketing@gmail.com" ||
+        request.auth.token.email == "anisurkp1966@gmail.com" ||
+        request.auth.token.email == "admin@123.com" ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Admin")
+      );
+    }
+
+    // Passengers Collection
+    match /passengers/{passengerId} {
+      allow list: if isSignedIn();
+      allow get: if isSignedIn();
+      
+      allow create: if isSignedIn() && isValidPassenger(incoming());
+                      
+      allow update: if isSignedIn() && isValidPassenger(incoming());
+      
+      allow delete: if isSignedIn();
+    }
+
+    // Office Staff Collection
+    match /office_staff/{staffId} {
+      allow list, get: if isSignedIn();
+      allow create: if isSignedIn() &&
+                    incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 200 &&
+                    incoming().designation is string && incoming().designation.size() > 0 && incoming().designation.size() <= 200 &&
+                    (!('role' in incoming()) || incoming().role in ["Manager", "Supervisor", "Agent", "Support Staff"]) &&
+                    incoming().joiningDate is string &&
+                    incoming().baseSalary is number &&
+                    incoming().status in ["Active", "Inactive"];
+      allow update: if isSignedIn() &&
+                    incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 200 &&
+                    incoming().designation is string && incoming().designation.size() > 0 && incoming().designation.size() <= 200 &&
+                    (!('role' in incoming()) || incoming().role in ["Manager", "Supervisor", "Agent", "Support Staff"]) &&
+                    incoming().joiningDate is string &&
+                    incoming().baseSalary is number &&
+                    incoming().status in ["Active", "Inactive"];
+      allow delete: if isSignedIn();
+    }
+
+    // Office Timesheets Collection
+    match /office_timesheets/{timesheetId} {
+      allow list, get: if isSignedIn();
+      allow create, update: if isSignedIn() &&
+                            incoming().staffId is string &&
+                            incoming().monthYear is string &&
+                            incoming().daysPresent is number &&
+                            incoming().overtimeHours is number;
+      allow delete: if isSignedIn();
+    }
+
+    // Office Advances Collection
+    match /office_advances/{advanceId} {
+      allow list, get: if isSignedIn();
+      allow create, update: if isSignedIn() &&
+                            incoming().staffId is string &&
+                            incoming().amount is number &&
+                            incoming().date is string &&
+                            incoming().purpose is string &&
+                            incoming().repaymentStatus in ["Pending Deduct", "Deducted", "Waived"];
+      allow delete: if isSignedIn();
+    }
+
+    // Office Salaries Collection
+    match /office_salaries/{salaryId} {
+      allow list, get: if isSignedIn();
+      allow create, update: if isSignedIn() &&
+                            incoming().staffId is string &&
+                            incoming().monthYear is string &&
+                            incoming().baseSalary is number &&
+                            incoming().allowance is number &&
+                            incoming().advanceDeducted is number &&
+                            incoming().netPayable is number &&
+                            incoming().isPaid is bool;
+      allow delete: if isSignedIn();
+    }
+
+    // Office Daily Attendance Collection (Hajira)
+    match /office_attendance/{attendanceId} {
+      allow list, get: if isSignedIn();
+      allow create, update: if isSignedIn() &&
+                            incoming().staffId is string &&
+                            incoming().date is string &&
+                            incoming().status in ["Present", "Late", "Absent", "Half Day", "On Leave"];
+      allow delete: if isSignedIn();
+    }
+
+    // Office Ledger (Hishaber Khata)
+    match /office_ledger/{transactionId} {
+      allow list, get: if isSignedIn();
+      allow create, update: if isSignedIn() &&
+                            incoming().date is string &&
+                            incoming().type in ["Inflow", "Outflow"] &&
+                            incoming().amount is number &&
+                            incoming().purpose is string &&
+                            incoming().createdByUid is string;
+      allow delete: if isSignedIn();
+    }
+
+    // Agencies Collection
+    match /agencies/{agencyId} {
+      allow list, get: if isSignedIn();
+      allow create, update: if isSignedIn() &&
+                            incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 200 &&
+                            incoming().phone is string && incoming().phone.size() >= 0 && incoming().phone.size() <= 100 &&
+                            incoming().createdByUid is string;
+      allow delete: if isSignedIn();
+    }
+
+    // Passport Logs Collection
+    match /passport_logs/{logId} {
+      allow list, get: if isSignedIn();
+      allow create: if isSignedIn() &&
+                    incoming().agencyId is string &&
+                    incoming().agencyName is string &&
+                    incoming().direction in ["ReceivedFromAgency", "DeliveredToAgency"] &&
+                    incoming().passportCount is number &&
+                    incoming().date is string &&
+                    incoming().createdByUid is string;
+      allow update: if isSignedIn() &&
+                    incoming().agencyId is string &&
+                    incoming().agencyName is string &&
+                    incoming().direction in ["ReceivedFromAgency", "DeliveredToAgency"] &&
+                    incoming().passportCount is number &&
+                    incoming().date is string &&
+                    incoming().createdByUid == existing().createdByUid;
+      allow delete: if isSignedIn();
+    }
+
+    // Training Enrollments Collection (ভর্তি ও ট্রেনিং হিসাব)
+    match /training_enrollments/{enrollmentId} {
+      allow list, get: if isSignedIn();
+      allow create, update: if isSignedIn() &&
+                            incoming().studentName is string && incoming().studentName.size() > 0 && incoming().studentName.size() <= 200 &&
+                            incoming().phone is string && incoming().phone.size() >= 0 && incoming().phone.size() <= 100 &&
+                            incoming().courseName is string && incoming().courseName.size() > 0 &&
+                            (!('passportNumber' in incoming()) || (incoming().passportNumber is string && incoming().passportNumber.size() <= 100)) &&
+                            incoming().totalFee is number &&
+                            incoming().paidAmount is number &&
+                            incoming().createdByUid is string;
+      allow delete: if isSignedIn();
+    }
+  }
+}
