@@ -8,12 +8,10 @@ import {
 import {
   User,
   onAuthStateChanged,
-  signInWithPopup,
-  GoogleAuthProvider,
-  signOut,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
+  signOut,
 } from "firebase/auth";
 import { auth } from "../lib/firebase";
 import { UserProfile } from "../types/user";
@@ -24,7 +22,6 @@ interface AuthContextType {
   profile: UserProfile | null;
   loading: boolean;
   isAdmin: boolean;
-  login: () => Promise<void>;
   loginWithEmail: (email: string, pass: string) => Promise<void>;
   signUpWithEmail: (email: string, pass: string) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
@@ -63,16 +60,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsubscribe;
   }, []);
 
-  const login = async () => {
-    const provider = new GoogleAuthProvider();
-    provider.addScope("https://www.googleapis.com/auth/drive.file");
-    const result = await signInWithPopup(auth, provider);
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    if (credential?.accessToken) {
-      sessionStorage.setItem("google_access_token", credential.accessToken);
-    }
-  };
-
   const loginWithEmail = async (email: string, pass: string) => {
     await signInWithEmailAndPassword(auth, email, pass);
   };
@@ -87,7 +74,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     await signOut(auth);
-    sessionStorage.removeItem("google_access_token");
   };
 
   const isAdmin =
@@ -100,7 +86,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         profile,
         loading,
         isAdmin,
-        login,
         loginWithEmail,
         signUpWithEmail,
         resetPassword,
@@ -119,3 +104,4 @@ export function useAuth() {
   }
   return context;
 }
+
