@@ -1,8 +1,10 @@
-// Legacy Firebase imports kept for Firestore compatibility only
-// Authentication has been replaced with JWT-based backend auth
+// Firebase client setup. Primary authentication is JWT-based (see src/lib/auth.ts);
+// `auth` and `storage` are still exported because services import them.
 
-import { initializeFirestore } from "firebase/firestore";
 import { initializeApp } from "firebase/app";
+import { getAuth } from "firebase/auth";
+import { initializeFirestore } from "firebase/firestore";
+import { getStorage } from "firebase/storage";
 import configParams from "../../firebase-applet-config.json";
 
 export const firebaseConfig = configParams;
@@ -15,3 +17,5 @@ export const db = dbId
   ? initializeFirestore(app, { experimentalForceLongPolling: true }, dbId)
   : initializeFirestore(app, { experimentalForceLongPolling: true });
 
+export const auth = getAuth(app);
+export const storage = getStorage(app);
