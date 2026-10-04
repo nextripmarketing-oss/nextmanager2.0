@@ -14,14 +14,13 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 
 export default function Login() {
-  const { login, loginWithEmail, signUpWithEmail, resetPassword } = useAuth();
+  const { loginWithEmail, signUpWithEmail, resetPassword } = useAuth();
   const { currentBranch, setBranch, branchMeta } = useBranch();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
   const [error, setError] = useState("");
-  const [isEmailView, setIsEmailView] = useState(false);
   const [emailMode, setEmailMode] = useState<"login" | "register" | "forgot">(
     "login",
   );
@@ -164,205 +163,144 @@ export default function Login() {
 
           <div className="w-full h-px bg-slate-100" />
 
-          <AnimatePresence mode="wait">
-            {!isEmailView ? (
-              <motion.div
-                key="choice"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.15 }}
-                className="w-full space-y-4"
+          <motion.form
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.15 }}
+            onSubmit={handleSubmit}
+            className="w-full space-y-4"
+          >
+            {/* Dynamic Header tabs */}
+            <div className="flex border-b border-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  setEmailMode("login");
+                  setError("");
+                  setSuccessMsg("");
+                }}
+                className={`flex-1 pb-2 text-center text-xs font-bold uppercase tracking-wider transition-colors ${emailMode === "login" ? "text-blue-600 border-b-2 border-blue-600" : "text-slate-400 hover:text-slate-600"}`}
               >
-                <motion.button
-                  whileHover={{
-                    y: -2,
-                    boxShadow: "0 10px 20px -10px rgba(0,0,0,0.08)",
-                  }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={login}
-                  className="w-full flex items-center justify-center gap-3 bg-white border border-slate-200/90 text-slate-800 py-4 px-6 rounded-2xl font-bold uppercase text-xs tracking-wider hover:bg-slate-50 hover:border-slate-300 transition-all cursor-pointer font-sans"
-                >
-                  <img
-                    src="https://www.google.com/favicon.ico"
-                    className="w-4 h-4"
-                    alt="G"
+                Login
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEmailMode("register");
+                  setError("");
+                  setSuccessMsg("");
+                }}
+                className={`flex-1 pb-2 text-center text-xs font-bold uppercase tracking-wider transition-colors ${emailMode === "register" ? "text-blue-600 border-b-2 border-blue-600" : "text-slate-400 hover:text-slate-600"}`}
+              >
+                Register
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEmailMode("forgot");
+                  setError("");
+                  setSuccessMsg("");
+                }}
+                className={`flex-1 pb-2 text-center text-xs font-bold uppercase tracking-wider transition-colors ${emailMode === "forgot" ? "text-blue-600 border-b-2 border-blue-600" : "text-slate-400 hover:text-slate-600"}`}
+              >
+                Reset
+              </button>
+            </div>
+
+            <div className="space-y-3.5 pt-2">
+              <div className="relative group/input">
+                <Mail
+                  className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within/input:text-blue-500 transition-colors"
+                  size={18}
+                />
+                <input
+                  type="email"
+                  placeholder="Agency Email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full pl-12 pr-4 py-4 bg-slate-50/60 border border-slate-200/80 rounded-2xl outline-none focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/5 transition-all text-sm text-slate-800 placeholder-slate-400 font-medium"
+                />
+              </div>
+
+              {emailMode !== "forgot" && (
+                <div className="relative group/input">
+                  <Lock
+                    className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within/input:text-blue-500 transition-colors"
+                    size={18}
                   />
-                  Continue with Google
-                </motion.button>
-                <div className="flex items-center gap-4 py-2">
-                  <div className="h-px flex-1 bg-slate-100" />
-                  <span className="text-[9px] font-black text-slate-300 uppercase tracking-[0.3em]">
-                    or securely use
-                  </span>
-                  <div className="h-px flex-1 bg-slate-100" />
-                </div>
-                <motion.button
-                  whileHover={{
-                    y: -2,
-                    boxShadow: "0 12px 24px -10px rgba(15,23,42,0.15)",
-                  }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => {
-                    setIsEmailView(true);
-                    setEmailMode("login");
-                  }}
-                  className="w-full bg-slate-900 text-white py-4 px-6 rounded-2xl font-bold uppercase text-xs tracking-widest hover:bg-slate-800 transition-all flex items-center justify-center gap-3 shadow-lg shadow-slate-900/10 cursor-pointer font-sans"
-                >
-                  <Mail size={16} strokeWidth={2.5} />
-                  Staff Account Key
-                </motion.button>
-              </motion.div>
-            ) : (
-              <motion.form
-                key="form"
-                initial={{ opacity: 0, scale: 0.96 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.96 }}
-                transition={{ duration: 0.15 }}
-                onSubmit={handleSubmit}
-                className="w-full space-y-4"
-              >
-                {/* Dynamic Header tabs */}
-                <div className="flex border-b border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEmailMode("login");
-                      setError("");
-                      setSuccessMsg("");
-                    }}
-                    className={`flex-1 pb-2 text-center text-xs font-bold uppercase tracking-wider transition-colors ${emailMode === "login" ? "text-blue-600 border-b-2 border-blue-600" : "text-slate-400 hover:text-slate-600"}`}
-                  >
-                    Login
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEmailMode("register");
-                      setError("");
-                      setSuccessMsg("");
-                    }}
-                    className={`flex-1 pb-2 text-center text-xs font-bold uppercase tracking-wider transition-colors ${emailMode === "register" ? "text-blue-600 border-b-2 border-blue-600" : "text-slate-400 hover:text-slate-600"}`}
-                  >
-                    Register
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEmailMode("forgot");
-                      setError("");
-                      setSuccessMsg("");
-                    }}
-                    className={`flex-1 pb-2 text-center text-xs font-bold uppercase tracking-wider transition-colors ${emailMode === "forgot" ? "text-blue-600 border-b-2 border-blue-600" : "text-slate-400 hover:text-slate-600"}`}
-                  >
-                    Reset
-                  </button>
-                </div>
-
-                <div className="space-y-3.5 pt-2">
-                  <div className="relative group/input">
-                    <Mail
-                      className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within/input:text-blue-500 transition-colors"
-                      size={18}
-                    />
-                    <input
-                      type="email"
-                      placeholder="Agency Email"
-                      required
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="w-full pl-12 pr-4 py-4 bg-slate-50/60 border border-slate-200/80 rounded-2xl outline-none focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/5 transition-all text-sm text-slate-800 placeholder-slate-400 font-medium"
-                    />
-                  </div>
-
-                  {emailMode !== "forgot" && (
-                    <div className="relative group/input">
-                      <Lock
-                        className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within/input:text-blue-500 transition-colors"
-                        size={18}
-                      />
-                      <input
-                        type="password"
-                        placeholder={
-                          emailMode === "register"
-                            ? "Pick a Password (6+ chars)"
-                            : "Access Token / Password"
-                        }
-                        required
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="w-full pl-12 pr-4 py-4 bg-slate-50/60 border border-slate-200/80 rounded-2xl outline-none focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/5 transition-all text-sm text-slate-800 placeholder-slate-400 font-medium"
-                      />
-                    </div>
-                  )}
-                </div>
-
-                {error && (
-                  <motion.p
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="text-red-500 text-[10px] font-bold uppercase tracking-wider text-center"
-                  >
-                    {error}
-                  </motion.p>
-                )}
-
-                {successMsg && (
-                  <motion.p
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="text-emerald-500 text-[10px] font-bold uppercase tracking-wider text-center"
-                  >
-                    {successMsg}
-                  </motion.p>
-                )}
-
-                <div className="pt-2 space-y-3">
-                  <motion.button
-                    type="submit"
-                    disabled={loading}
-                    whileHover={
-                      !loading
-                        ? {
-                            y: -2,
-                            boxShadow: "0 12px 24px -10px rgba(37,99,235,0.25)",
-                          }
-                        : {}
+                  <input
+                    type="password"
+                    placeholder={
+                      emailMode === "register"
+                        ? "Pick a Password (6+ chars)"
+                        : "Access Token / Password"
                     }
-                    whileTap={!loading ? { scale: 0.98 } : {}}
-                    className="w-full bg-blue-600 text-white py-4 px-6 rounded-2xl font-bold uppercase text-xs tracking-widest hover:bg-blue-700 transition-all disabled:opacity-50 flex items-center justify-center gap-3 shadow-lg shadow-blue-500/10 cursor-pointer font-sans"
-                  >
-                    {loading ? (
-                      <Loader2 className="animate-spin" size={18} />
-                    ) : emailMode === "login" ? (
-                      <>
-                        <LogIn size={16} strokeWidth={2.5} />
-                        Authorize Session
-                      </>
-                    ) : emailMode === "register" ? (
-                      <>
-                        <UserPlus size={16} strokeWidth={2.5} />
-                        Register Account
-                      </>
-                    ) : (
-                      <>
-                        <KeyRound size={16} strokeWidth={2.5} />
-                        Send Reset Email
-                      </>
-                    )}
-                  </motion.button>
-                  <button
-                    type="button"
-                    onClick={() => setIsEmailView(false)}
-                    className="w-full text-slate-400 text-[10px] font-bold uppercase tracking-widest hover:text-slate-600 transition-colors py-1 cursor-pointer font-sans"
-                  >
-                    Back to options
-                  </button>
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full pl-12 pr-4 py-4 bg-slate-50/60 border border-slate-200/80 rounded-2xl outline-none focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/5 transition-all text-sm text-slate-800 placeholder-slate-400 font-medium"
+                  />
                 </div>
-              </motion.form>
+              )}
+            </div>
+
+            {error && (
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="text-red-500 text-[10px] font-bold uppercase tracking-wider text-center"
+              >
+                {error}
+              </motion.p>
             )}
-          </AnimatePresence>
+
+            {successMsg && (
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="text-emerald-500 text-[10px] font-bold uppercase tracking-wider text-center"
+              >
+                {successMsg}
+              </motion.p>
+            )}
+
+            <div className="pt-2 space-y-3">
+              <motion.button
+                type="submit"
+                disabled={loading}
+                whileHover={
+                  !loading
+                    ? {
+                        y: -2,
+                        boxShadow: "0 12px 24px -10px rgba(37,99,235,0.25)",
+                      }
+                    : {}
+                }
+                whileTap={!loading ? { scale: 0.98 } : {}}
+                className="w-full bg-blue-600 text-white py-4 px-6 rounded-2xl font-bold uppercase text-xs tracking-widest hover:bg-blue-700 transition-all disabled:opacity-50 flex items-center justify-center gap-3 shadow-lg shadow-blue-500/10 cursor-pointer font-sans"
+              >
+                {loading ? (
+                  <Loader2 className="animate-spin" size={18} />
+                ) : emailMode === "login" ? (
+                  <>
+                    <LogIn size={16} strokeWidth={2.5} />
+                    Authorize Session
+                  </>
+                ) : emailMode === "register" ? (
+                  <>
+                    <UserPlus size={16} strokeWidth={2.5} />
+                    Register Account
+                  </>
+                ) : (
+                  <>
+                    <KeyRound size={16} strokeWidth={2.5} />
+                    Send Reset Email
+                  </>
+                )}
+              </motion.button>
+            </div>
+          </motion.form>
 
           <div className="flex flex-col items-center gap-2 mt-2">
             <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 rounded-full border border-emerald-100/50">
@@ -377,3 +315,4 @@ export default function Login() {
     </div>
   );
 }
+
