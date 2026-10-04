@@ -4,6 +4,7 @@
  */
 
 import { AuthProvider, useAuth } from "./components/AuthProvider";
+import { BranchProvider } from "./contexts/BranchContext";
 import Login from "./components/Login";
 import Dashboard from "./components/Dashboard";
 
@@ -29,7 +30,9 @@ function AppContent() {
 export default function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <BranchProvider>
+        <AppContent />
+      </BranchProvider>
     </AuthProvider>
   );
 }

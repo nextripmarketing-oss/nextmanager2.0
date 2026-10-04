@@ -1,7 +1,9 @@
 import React, { useState } from "react";
 import { useAuth } from "./AuthProvider";
+import { useBranch } from "../contexts/BranchContext";
 import {
   Plane,
+  Building2,
   LogIn,
   Mail,
   Lock,
@@ -13,6 +15,7 @@ import { motion, AnimatePresence } from "motion/react";
 
 export default function Login() {
   const { login, loginWithEmail, signUpWithEmail, resetPassword } = useAuth();
+  const { currentBranch, setBranch, branchMeta } = useBranch();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -128,6 +131,34 @@ export default function Login() {
               <h1 className="text-2xl font-display font-black text-slate-900 tracking-tight">
                 Security Gateway
               </h1>
+            </div>
+
+            {/* Branch / Office Selection on Login */}
+            <div className="w-full bg-slate-50 border border-slate-200/80 rounded-2xl p-1.5 flex gap-1.5 shadow-inner">
+              <button
+                type="button"
+                onClick={() => setBranch("nextrip")}
+                className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                  currentBranch === "nextrip"
+                    ? "bg-white text-blue-600 shadow-sm border border-slate-200/80"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                <Plane size={14} />
+                <span>নেক্সট্রিপ</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setBranch("diabari")}
+                className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                  currentBranch === "diabari"
+                    ? "bg-white text-emerald-600 shadow-sm border border-slate-200/80"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                <Building2 size={14} />
+                <span>দিয়াবাড়ী (হেড অফিস)</span>
+              </button>
             </div>
           </div>
 

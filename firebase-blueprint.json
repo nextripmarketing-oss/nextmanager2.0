@@ -34,6 +34,7 @@
           ] 
         },
         "country": { "type": "string" },
+        "branch": { "type": "string" },
         "documents": {
           "type": "array",
           "items": {
@@ -164,6 +165,18 @@
         "remarks": { "type": "string" },
         "createdByUid": { "type": "string" },
         "createdByEmail": { "type": "string" },
+        "recipientType": { "type": "string", "enum": ["Staff", "Boss", "Passenger", "Agent", "Other"] },
+        "personName": { "type": "string" },
+        "staffId": { "type": "string" },
+        "isMedicalVoucher": { "type": "boolean" },
+        "branch": { "type": "string" },
+        "medicalCost": { "type": "number" },
+        "medicalCenter": { "type": "string" },
+        "medicalReferenceId": { "type": "string" },
+        "medicalReferenceName": { "type": "string" },
+        "medicalCommission": { "type": "number" },
+        "passengerId": { "type": "string" },
+        "passengerName": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["date", "type", "amount", "purpose", "createdByUid", "createdByEmail"]

@@ -235,6 +235,7 @@ export default function TrainingManagement() {
         reference: "ACADEMY PROMOTED",
         date: new Date().toISOString().split("T")[0],
         status: "Passport Submit",
+        branch: "diabari",
         country: transferCountry,
         passengerType: transferType,
         documents: [],
@@ -1186,6 +1187,7 @@ export default function TrainingManagement() {
                         Saudi Arabia (সৌদি আরব)
                       </option>
                       <option value="Malaysia">Malaysia (মালয়েশিয়া)</option>
+                      <option value="Vietnam">Vietnam (ভিয়েতনাম)</option>
                       <option value="Romania">Romania (রোমানিয়া)</option>
                       <option value="Croatia">Croatia (ক্রোয়েশিয়া)</option>
                       <option value="United Kingdom">

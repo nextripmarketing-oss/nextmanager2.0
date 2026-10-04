@@ -92,6 +92,7 @@ export const CSVService = {
       submissionDate: data.submissiondate || data.passportsubmit || undefined,
       status: mappedStatus,
       country: (data.country || data.destination || "Unknown").trim(),
+      branch: (data.branch || data.office || "").toLowerCase().includes("diabari") ? "diabari" : "nextrip",
       documents: [],
       history: [
         {

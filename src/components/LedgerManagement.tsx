@@ -26,8 +26,15 @@ import {
   Stethoscope,
   Award,
   Users,
+  User,
   UserCheck,
+  ChevronDown,
+  ChevronUp,
+  Eye,
+  FileText,
   Settings,
+  Building2,
+  Plane,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { LedgerService } from "../services/ledgerService";
@@ -36,8 +43,9 @@ import { PrintService } from "../services/printService";
 import { PassengerService } from "../services/passengerService";
 import { EmploymentService } from "../services/employmentService";
 import { CashTransaction } from "../types/ledger";
-import { Passenger } from "../types/passenger";
+import { Passenger, BranchId } from "../types/passenger";
 import { StaffMember } from "../types/employment";
+import { useBranch } from "../contexts/BranchContext";
 import {
   ResponsiveContainer,
   BarChart,
@@ -73,12 +81,23 @@ const EXPENSE_CATEGORIES = [
 ];
 
 export default function LedgerManagement() {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
+  const { currentBranch, filterTransactions, filterPassengers, branchMeta } =
+    useBranch();
+  const [branchFilter, setBranchFilter] = useState<BranchId | "all">(
+    currentBranch,
+  );
+
+  useEffect(() => {
+    setBranchFilter(currentBranch);
+  }, [currentBranch]);
+
   const [transactions, setTransactions] = useState<CashTransaction[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<"All" | "Inflow" | "Outflow">(
     "All",
   );
+  const [filterCategory, setFilterCategory] = useState<string>("All");
   const [selectedMonth, setSelectedMonth] = useState<string>("All"); // "YYYY-MM" or "All"
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -188,13 +207,29 @@ export default function LedgerManagement() {
   const [formRemarks, setFormRemarks] = useState("");
 
   // Tab/View selector
-  const [activeView, setActiveView] = useState<"ledger" | "medical-commission">(
-    "ledger",
-  );
+  const [activeView, setActiveView] = useState<
+    "ledger" | "person-tracker" | "medical-commission"
+  >("ledger");
 
   // Database fetched states
   const [passengers, setPassengers] = useState<Passenger[]>([]);
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
+
+  // Granular Recipient & Accountability fields (যেমন: আহাদ কত নিল, মেডিকেল করাল, বস কত নিল)
+  const [formRecipientType, setFormRecipientType] = useState<
+    "Boss" | "Staff" | "Passenger" | "Other" | ""
+  >("");
+  const [formPersonName, setFormPersonName] = useState("");
+  const [formStaffId, setFormStaffId] = useState("");
+  const [formMedicalCost, setFormMedicalCost] = useState("");
+  const [formMedicalCenter, setFormMedicalCenter] = useState("");
+
+  // Filters & detail views
+  const [filterPerson, setFilterPerson] = useState("All");
+  const [personSearchQuery, setPersonSearchQuery] = useState("");
+  const [expandedPersonKey, setExpandedPersonKey] = useState<string | null>(
+    null,
+  );
 
   // New Medical Commission Form fields
   const [isMedicalVoucher, setIsMedicalVoucher] = useState(false);
@@ -354,6 +389,7 @@ export default function LedgerManagement() {
       type: calcType,
       amount: calcTotalAmount,
       purpose: finalPurpose,
+      branch: (editingTx?.branch) || (branchFilter !== "all" ? branchFilter : currentBranch),
       date: calcDate,
       remarks: combinedRemarks,
       createdByUid: user.uid,
@@ -410,6 +446,15 @@ export default function LedgerManagement() {
       setPassengerSearchInput(editingTx.passengerName || "");
       setIsPassengerSearchDropdownOpen(false);
 
+      // Recipient / Person & Medical cost fields
+      setFormRecipientType(editingTx.recipientType || "");
+      setFormPersonName(editingTx.personName || "");
+      setFormStaffId(editingTx.staffId || "");
+      setFormMedicalCost(
+        editingTx.medicalCost ? editingTx.medicalCost.toString() : "",
+      );
+      setFormMedicalCenter(editingTx.medicalCenter || "");
+
       // Set to manual when loading edit mode to prevent automatic overwrite of custom commission values
       setCommissionCalcMode("manual");
     } else {
@@ -420,6 +465,12 @@ export default function LedgerManagement() {
       setCustomPurpose("");
       const localD = new Date(Date.now() + 6 * 60 * 60 * 1000);
       setFormDate(localD.toISOString().split("T")[0]);
+
+      setFormRecipientType("");
+      setFormPersonName("");
+      setFormStaffId("");
+      setFormMedicalCost("");
+      setFormMedicalCenter("");
 
       setIsMedicalVoucher(false);
       setMedicalReferenceId("");
@@ -526,11 +577,12 @@ export default function LedgerManagement() {
         : passengers.find((p) => p.id === passengerId)?.name || ""
       : "";
 
-    const payload: Omit<CashTransaction, "id" | "createdAt"> = {
+    const payload: any = {
       date: formDate,
       type: formType,
       amount: amountNum,
       purpose: finalPurpose,
+      branch: (editingTx?.branch) || (branchFilter !== "all" ? branchFilter : currentBranch),
       remarks: formRemarks.trim(),
       createdByUid: user.uid,
       createdByEmail: user.email || "unknown@nextrip.com",
@@ -542,6 +594,12 @@ export default function LedgerManagement() {
       passengerId: isMedicalVoucher ? passengerId : "",
       passengerName: resolvedPassengerName,
     };
+
+    if (formRecipientType) payload.recipientType = formRecipientType;
+    if (formPersonName) payload.personName = formPersonName.trim();
+    if (formStaffId) payload.staffId = formStaffId;
+    if (isMedicalVoucher && formMedicalCost) payload.medicalCost = Number(formMedicalCost);
+    if (isMedicalVoucher && formMedicalCenter) payload.medicalCenter = formMedicalCenter.trim();
 
     setPendingTxPayload(payload);
     setShowConfirmModal(true);
@@ -562,7 +620,7 @@ export default function LedgerManagement() {
       setEditingTx(null);
     } catch (err: any) {
       console.error(err);
-      alert("হিসাব সংরক্ষণ করতে সমস্যা হয়েছে।");
+      alert("হিসাব সংরক্ষণ করতে সমস্যা হয়েছে: " + (err.message || String(err)));
     } finally {
       setIsSubmitting(false);
     }
@@ -584,24 +642,37 @@ export default function LedgerManagement() {
     }
   };
 
+  // Branch-scoped transactions and passengers
+  const branchScopedTransactions = useMemo(() => {
+    return filterTransactions(transactions, branchFilter);
+  }, [transactions, branchFilter, filterTransactions]);
+
+  const branchScopedPassengers = useMemo(() => {
+    return filterPassengers(passengers, branchFilter);
+  }, [passengers, branchFilter, filterPassengers]);
+
   // Month options based on existing ledger records
   const monthOptions = useMemo(() => {
     const months = new Set<string>();
-    transactions.forEach((tx) => {
+    branchScopedTransactions.forEach((tx) => {
       if (tx.date && tx.date.length >= 7) {
         months.add(tx.date.substring(0, 7)); // e.g. "2026-05"
       }
     });
     return Array.from(months).sort((a, b) => b.localeCompare(a));
-  }, [transactions]);
+  }, [branchScopedTransactions]);
 
   // Calculations for filtered list and summaries
   const stats = useMemo(() => {
     let totalInflow = 0;
     let totalOutflow = 0;
     let totalMedicalCommission = 0;
+    let totalBossWithdrawn = 0;
+    let totalMedicalCost = 0;
+    let totalStaffOutflow = 0;
+    let totalStaffInflow = 0;
 
-    transactions.forEach((tx) => {
+    branchScopedTransactions.forEach((tx) => {
       // 1. Apply selected month filter ONLY for summary calculations if specified
       if (
         selectedMonth !== "All" &&
@@ -629,26 +700,68 @@ export default function LedgerManagement() {
           .includes(q);
         const matchesAmount = (tx.amount || 0).toString().includes(q);
         const matchesDate = (tx.date || "").includes(q);
+        const matchesPerson = (tx.personName || "").toLowerCase().includes(q);
+        const matchesRef = (tx.medicalReferenceName || "")
+          .toLowerCase()
+          .includes(q);
+        const matchesPassenger = (tx.passengerName || "")
+          .toLowerCase()
+          .includes(q);
+        const matchesCenter = (tx.medicalCenter || "").toLowerCase().includes(q);
+
         if (
           !(
             matchesPurpose ||
             matchesRemarks ||
             matchesEmail ||
             matchesAmount ||
-            matchesDate
+            matchesDate ||
+            matchesPerson ||
+            matchesRef ||
+            matchesPassenger ||
+            matchesCenter
           )
         ) {
           return;
         }
       }
 
+      // 4. Category filter
+      if (filterCategory !== "All" && tx.purpose !== filterCategory) {
+        return;
+      }
+
+      const isBoss =
+        tx.recipientType === "Boss" ||
+        (tx.personName &&
+          (tx.personName.includes("বস") ||
+            tx.personName.toLowerCase().includes("boss"))) ||
+        (tx.purpose &&
+          (tx.purpose.includes("বস") ||
+            tx.purpose.toLowerCase().includes("boss")));
+
       if (tx.type === "Inflow") {
         totalInflow += tx.amount;
+        if (
+          (tx.recipientType === "Staff" || (!isBoss && tx.personName)) &&
+          !isBoss
+        ) {
+          totalStaffInflow += tx.amount;
+        }
       } else {
         totalOutflow += tx.amount;
+        if (isBoss) {
+          totalBossWithdrawn += tx.amount;
+        } else if (tx.recipientType === "Staff" || tx.personName) {
+          totalStaffOutflow += tx.amount;
+        }
       }
-      if (tx.isMedicalVoucher && tx.medicalCommission) {
-        totalMedicalCommission += tx.medicalCommission;
+
+      if (tx.isMedicalVoucher) {
+        totalMedicalCost += tx.medicalCost || tx.amount;
+        if (tx.medicalCommission) {
+          totalMedicalCommission += tx.medicalCommission;
+        }
       }
     });
 
@@ -657,8 +770,170 @@ export default function LedgerManagement() {
       outflow: totalOutflow,
       balance: totalInflow - totalOutflow,
       medicalCommission: totalMedicalCommission,
+      bossWithdrawn: totalBossWithdrawn,
+      medicalCost: totalMedicalCost,
+      staffOutflow: totalStaffOutflow,
+      staffInflow: totalStaffInflow,
     };
-  }, [transactions, selectedMonth, startDate, endDate, searchQuery]);
+  }, [
+    branchScopedTransactions,
+    selectedMonth,
+    startDate,
+    endDate,
+    searchQuery,
+    filterCategory,
+  ]);
+
+  // Aggregated Person-wise data (আহাদ কত নিল, কত টাকার মেডিকেল করাল, বস কত নিল)
+  const personsLedgerData = useMemo(() => {
+    interface PersonSummary {
+      key: string;
+      name: string;
+      role: "Boss" | "Staff" | "Passenger" | "Other";
+      totalTaken: number;
+      totalDeposited: number;
+      netBalance: number;
+      medicalsCount: number;
+      totalMedicalCost: number;
+      totalCommission: number;
+      vouchers: CashTransaction[];
+    }
+
+    const map: { [key: string]: PersonSummary } = {};
+
+    const getOrCreate = (
+      key: string,
+      defaultName: string,
+      role: "Boss" | "Staff" | "Passenger" | "Other",
+    ) => {
+      if (!map[key]) {
+        map[key] = {
+          key,
+          name: defaultName,
+          role,
+          totalTaken: 0,
+          totalDeposited: 0,
+          netBalance: 0,
+          medicalsCount: 0,
+          totalMedicalCost: 0,
+          totalCommission: 0,
+          vouchers: [],
+        };
+      }
+      return map[key];
+    };
+
+    // Pre-populate Boss and Staff members
+    getOrCreate("boss", "বস / মালিক (Boss)", "Boss");
+    staffList.forEach((s) => {
+      const key = `staff_${s.id || s.name}`;
+      getOrCreate(key, s.name, "Staff");
+    });
+
+    // Populate from transactions
+    branchScopedTransactions.forEach((tx) => {
+      if (
+        selectedMonth !== "All" &&
+        tx.date.substring(0, 7) !== selectedMonth
+      ) {
+        return;
+      }
+      if (startDate && tx.date < startDate) return;
+      if (endDate && tx.date > endDate) return;
+
+      const isBoss =
+        tx.recipientType === "Boss" ||
+        (tx.personName &&
+          (tx.personName.includes("বস") ||
+            tx.personName.toLowerCase().includes("boss"))) ||
+        (tx.purpose &&
+          (tx.purpose.includes("বস") ||
+            tx.purpose.toLowerCase().includes("boss")));
+
+      let pKey = "";
+      let pName = "";
+      let pRole: "Boss" | "Staff" | "Passenger" | "Other" = "Other";
+
+      if (isBoss) {
+        pKey = "boss";
+        pName = "বস / মালিক (Boss)";
+        pRole = "Boss";
+      } else if (tx.staffId || tx.recipientType === "Staff") {
+        const staffObj = staffList.find(
+          (s) => s.id === tx.staffId || s.name === tx.personName,
+        );
+        pKey = tx.staffId
+          ? `staff_${tx.staffId}`
+          : `staff_${tx.personName || "unknown"}`;
+        pName = staffObj ? staffObj.name : tx.personName || "অজ্ঞাত স্টাফ";
+        pRole = "Staff";
+      } else if (tx.medicalReferenceId || tx.medicalReferenceName) {
+        const refName = tx.medicalReferenceName?.trim() || "";
+        pKey = tx.medicalReferenceId
+          ? `staff_${tx.medicalReferenceId}`
+          : `ref_${refName}`;
+        pName = refName || "মেডিকেল রেফারেন্স";
+        pRole = "Staff";
+      } else if (tx.personName?.trim()) {
+        const pTrimmed = tx.personName.trim();
+        pKey = `person_${pTrimmed}`;
+        pName = pTrimmed;
+        pRole = tx.recipientType === "Passenger" ? "Passenger" : "Other";
+      }
+
+      if (pKey) {
+        const item = getOrCreate(pKey, pName, pRole);
+        if (tx.type === "Outflow") {
+          item.totalTaken += tx.amount;
+        } else {
+          item.totalDeposited += tx.amount;
+        }
+        if (tx.isMedicalVoucher) {
+          item.medicalsCount += 1;
+          item.totalMedicalCost += tx.medicalCost || tx.amount;
+          item.totalCommission += tx.medicalCommission || 0;
+        }
+        item.vouchers.push(tx);
+        item.netBalance = item.totalDeposited - item.totalTaken;
+      }
+    });
+
+    return Object.values(map)
+      .filter(
+        (p) =>
+          p.vouchers.length > 0 ||
+          p.role === "Boss" ||
+          p.totalTaken > 0 ||
+          p.totalDeposited > 0,
+      )
+      .sort((a, b) => {
+        if (a.role === "Boss") return -1;
+        if (b.role === "Boss") return 1;
+        return (
+          b.totalTaken +
+          b.totalDeposited -
+          (a.totalTaken + a.totalDeposited)
+        );
+      });
+  }, [branchScopedTransactions, staffList, selectedMonth, startDate, endDate]);
+
+  const filteredPersonsLedgerData = useMemo(() => {
+    return personsLedgerData.filter((p) => {
+      if (personSearchQuery.trim()) {
+        const q = personSearchQuery.toLowerCase();
+        const matchesName = p.name.toLowerCase().includes(q);
+        const matchesVoucher = p.vouchers.some(
+          (v) =>
+            (v.passengerName && v.passengerName.toLowerCase().includes(q)) ||
+            (v.purpose && v.purpose.toLowerCase().includes(q)) ||
+            (v.remarks && v.remarks.toLowerCase().includes(q)) ||
+            (v.medicalCenter && v.medicalCenter.toLowerCase().includes(q)),
+        );
+        if (!matchesName && !matchesVoucher) return false;
+      }
+      return true;
+    });
+  }, [personsLedgerData, personSearchQuery]);
 
   // Monthly trends for Recharts Bar Chart
   const trendData = useMemo(() => {
@@ -666,7 +941,7 @@ export default function LedgerManagement() {
       [month: string]: { inflow: number; outflow: number };
     } = {};
 
-    transactions.forEach((tx) => {
+    branchScopedTransactions.forEach((tx) => {
       if (!tx.date || tx.date.length < 7) return;
       const monthStr = tx.date.substring(0, 7); // e.g. "2026-05"
       if (!monthlyDataMap[monthStr]) {
@@ -731,11 +1006,11 @@ export default function LedgerManagement() {
         };
       })
       .slice(-12); // Present up to the last 12 active months
-  }, [transactions]);
+  }, [branchScopedTransactions]);
 
   // Filtering transactions list
   const filteredTransactions = useMemo(() => {
-    return transactions.filter((tx) => {
+    return branchScopedTransactions.filter((tx) => {
       // 1. Filter Type ("All", "Inflow", "Outflow")
       if (filterType !== "All" && tx.type !== filterType) {
         return false;
@@ -758,6 +1033,43 @@ export default function LedgerManagement() {
         return false;
       }
 
+      // Category filter
+      if (filterCategory !== "All" && tx.purpose !== filterCategory) {
+        return false;
+      }
+
+      // Person / Accountability filter
+      if (filterPerson !== "All") {
+        const isBoss =
+          tx.recipientType === "Boss" ||
+          (tx.personName &&
+            (tx.personName.includes("বস") ||
+              tx.personName.toLowerCase().includes("boss"))) ||
+          (tx.purpose &&
+            (tx.purpose.includes("বস") ||
+              tx.purpose.toLowerCase().includes("boss")));
+
+        if (filterPerson === "Boss") {
+          if (!isBoss) return false;
+        } else if (filterPerson === "Staff") {
+          if (!tx.staffId && tx.recipientType !== "Staff" && isBoss) {
+            return false;
+          }
+        } else {
+          const matchP =
+            (tx.personName &&
+              tx.personName
+                .toLowerCase()
+                .includes(filterPerson.toLowerCase())) ||
+            (tx.medicalReferenceName &&
+              tx.medicalReferenceName
+                .toLowerCase()
+                .includes(filterPerson.toLowerCase())) ||
+            tx.staffId === filterPerson;
+          if (!matchP) return false;
+        }
+      }
+
       // 3. Search query match
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -768,39 +1080,54 @@ export default function LedgerManagement() {
           .includes(q);
         const matchesAmount = (tx.amount || 0).toString().includes(q);
         const matchesDate = (tx.date || "").includes(q);
+        const matchesPerson = (tx.personName || "").toLowerCase().includes(q);
+        const matchesRef = (tx.medicalReferenceName || "")
+          .toLowerCase()
+          .includes(q);
+        const matchesPassenger = (tx.passengerName || "")
+          .toLowerCase()
+          .includes(q);
+        const matchesCenter = (tx.medicalCenter || "").toLowerCase().includes(q);
+
         return (
           matchesPurpose ||
           matchesRemarks ||
           matchesEmail ||
           matchesAmount ||
-          matchesDate
+          matchesDate ||
+          matchesPerson ||
+          matchesRef ||
+          matchesPassenger ||
+          matchesCenter
         );
       }
 
       return true;
     });
   }, [
-    transactions,
+    branchScopedTransactions,
     filterType,
     selectedMonth,
     searchQuery,
     startDate,
     endDate,
+    filterCategory,
+    filterPerson,
   ]);
 
   // Passenger selection autocomplete list filter
   const filteredPassengersForSelect = useMemo(() => {
     if (!passengerSearchInput.trim()) {
-      return passengers.slice(0, 5); // Default show first 5 passengers if search is empty
+      return branchScopedPassengers.slice(0, 5); // Default show first 5 passengers if search is empty
     }
     const q = passengerSearchInput.toLowerCase();
-    return passengers.filter(
+    return branchScopedPassengers.filter(
       (p) =>
         (p.name || "").toLowerCase().includes(q) ||
         (p.passportNumber || "").toLowerCase().includes(q) ||
         (p.phone || "").toLowerCase().includes(q),
     );
-  }, [passengers, passengerSearchInput]);
+  }, [branchScopedPassengers, passengerSearchInput]);
 
   // Selected reference for detailed view
   const [selectedReportRef, setSelectedReportRef] = useState<string | null>(
@@ -809,7 +1136,7 @@ export default function LedgerManagement() {
 
   const medicalReportData = useMemo(() => {
     // Filter transactions to only medical ones
-    let list = transactions.filter((tx) => tx.isMedicalVoucher);
+    let list = branchScopedTransactions.filter((tx) => tx.isMedicalVoucher);
 
     // Group by reference
     const groups: {
@@ -845,7 +1172,7 @@ export default function LedgerManagement() {
     });
 
     return Object.values(groups);
-  }, [transactions]);
+  }, [branchScopedTransactions]);
 
   return (
     <div
@@ -855,19 +1182,89 @@ export default function LedgerManagement() {
       {/* Upper header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-          <div className="w-1.5 h-8 bg-blue-600 rounded-full shadow-[0_0_15px_rgba(29,78,216,0.4)]"></div>
+          <div
+            className={`w-1.5 h-8 rounded-full ${
+              branchFilter === "diabari"
+                ? "bg-emerald-600 shadow-[0_0_15px_rgba(5,150,105,0.4)]"
+                : branchFilter === "all"
+                ? "bg-purple-600 shadow-[0_0_15px_rgba(147,51,234,0.4)]"
+                : "bg-blue-600 shadow-[0_0_15px_rgba(29,78,216,0.4)]"
+            }`}
+          ></div>
           <div>
-            <h2 className="text-xl lg:text-2xl font-display font-bold text-slate-950 tracking-tight">
-              অফিসিয়াল হিসাবের খাতা (Cash Ledger)
-            </h2>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-xl lg:text-2xl font-display font-bold text-slate-950 dark:text-white tracking-tight">
+                {branchFilter === "diabari"
+                  ? "দিয়াবাড়ী (হেড অফিস) - অফিস ক্যাশ খাতা"
+                  : branchFilter === "all"
+                  ? "সকল শাখা - সমন্বিত ক্যাশ খাতা (All Branches)"
+                  : "নেক্সট্রিপ - অফিসিয়াল হিসাবের খাতা"}
+              </h2>
+              <span
+                className={`px-2.5 py-0.5 rounded-full text-[11px] font-black tracking-wide uppercase ${
+                  branchFilter === "diabari"
+                    ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                    : branchFilter === "all"
+                    ? "bg-purple-100 text-purple-800 border border-purple-200"
+                    : "bg-blue-100 text-blue-800 border border-blue-200"
+                }`}
+              >
+                {branchFilter === "diabari"
+                  ? "🏛️ দিয়াবাড়ী (RL2572)"
+                  : branchFilter === "all"
+                  ? "🌐 উভয় শাখা"
+                  : "✈️ নেক্সট্রিপ শাখা"}
+              </span>
+            </div>
             <p className="text-xs text-slate-500 font-light mt-0.5">
-              মনোনীত অফিসের দৈনিক আয়-ব্যয় এবং ক্যাশ ব্যালেন্স রেকর্ড করার
-              কেন্দ্রীয় খাতা।
+              {branchFilter === "diabari"
+                ? "দিয়াবাড়ী হেড অফিসের দৈনিক আয়-ব্যয়, ক্যাশ ব্যালেন্স ও মেডিকেল কমিশন খাতা।"
+                : "নেক্সট্রিপ অফিসের দৈনিক আয়-ব্যয় এবং ক্যাশ ব্যালেন্স রেকর্ড করার কেন্দ্রীয় খাতা।"}
             </p>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 self-start md:self-auto">
+          {/* Admin Branch Switcher in Ledger */}
+          {isAdmin && (
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
+              <button
+                type="button"
+                onClick={() => setBranchFilter("nextrip")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  branchFilter === "nextrip"
+                    ? "bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                }`}
+              >
+                ✈️ নেক্সট্রিপ
+              </button>
+              <button
+                type="button"
+                onClick={() => setBranchFilter("diabari")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  branchFilter === "diabari"
+                    ? "bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-xs"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                }`}
+              >
+                🏛️ দিয়াবাড়ী (হেড অফিস)
+              </button>
+              <button
+                type="button"
+                onClick={() => setBranchFilter("all")}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  branchFilter === "all"
+                    ? "bg-white dark:bg-slate-700 text-purple-600 dark:text-purple-400 shadow-xs"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                }`}
+                title="উভয় শাখার সকল হিসাব একসাথে দেখুন"
+              >
+                উভয় শাখা
+              </button>
+            </div>
+          )}
+
           <button
             id="btn-open-ledger-calculator"
             type="button"
@@ -923,6 +1320,7 @@ export default function LedgerManagement() {
                 searchQuery,
                 startDate,
                 endDate,
+                filterCategory
               )
             }
             className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl py-3 px-5 text-xs font-bold uppercase tracking-wider shadow-sm transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-98"
@@ -948,10 +1346,10 @@ export default function LedgerManagement() {
       </div>
 
       {/* Modern View Swapper Tabs */}
-      <div className="flex border-b border-slate-200">
+      <div className="flex border-b border-slate-200 overflow-x-auto">
         <button
           onClick={() => setActiveView("ledger")}
-          className={`py-3 px-6 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
+          className={`py-3 px-5 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
             activeView === "ledger"
               ? "border-blue-600 text-blue-600 font-extrabold"
               : "border-transparent text-slate-500 hover:text-slate-800"
@@ -960,149 +1358,204 @@ export default function LedgerManagement() {
           <Wallet size={14} />
           দৈনিক হিসাব খাতা (Cash Book Ledger)
         </button>
+
+        <button
+          onClick={() => setActiveView("person-tracker")}
+          className={`py-3 px-5 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
+            activeView === "person-tracker"
+              ? "border-blue-600 text-blue-600 font-extrabold"
+              : "border-transparent text-slate-500 hover:text-slate-800"
+          }`}
+        >
+          <Users size={14} />
+          ব্যক্তি ও বসের হিসাব খাতা (Person & Boss Tracker)
+        </button>
+
         <button
           onClick={() => setActiveView("medical-commission")}
-          className={`py-3 px-6 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
+          className={`py-3 px-5 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
             activeView === "medical-commission"
               ? "border-blue-600 text-blue-600 font-extrabold"
               : "border-transparent text-slate-500 hover:text-slate-800"
           }`}
         >
           <Stethoscope size={14} />
-          মেডিকেল রেফারেন্স ও কমিশন (Medical Commissions Report)
+          মেডিকেল রেফারেন্স ও কমিশন (Medical Report)
         </button>
       </div>
 
       {activeView === "ledger" ? (
         <>
-          {/* Stats Cards Section */}
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5 lg:gap-6">
+          {/* Stats Cards Section - 6 Comprehensive Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
             {/* Total Inflow Cash */}
             <motion.div
               whileHover={{ y: -3 }}
-              className="bg-white border border-slate-200/50 rounded-[2rem] p-6 shadow-sm flex items-center gap-4 relative overflow-hidden group"
+              className="bg-white border border-slate-200/50 rounded-2xl p-5 shadow-sm flex flex-col justify-between relative overflow-hidden group"
             >
-              <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-50 rounded-full blur-2xl -mr-8 -mt-8 opacity-70 group-hover:opacity-100 transition-opacity"></div>
-              <div className="p-3 bg-emerald-50 rounded-2xl text-emerald-600 border border-emerald-100 shadow-sm">
-                <ArrowDownLeft
-                  size={22}
-                  className="group-hover:scale-110 transition-transform"
-                />
+              <div className="flex items-center justify-between">
+                <span className="p-2.5 bg-emerald-50 rounded-xl text-emerald-600 border border-emerald-100 shadow-sm">
+                  <ArrowDownLeft size={18} />
+                </span>
+                {selectedMonth !== "All" && (
+                  <span className="text-[8px] font-bold text-slate-400 bg-slate-50 border border-slate-100 rounded px-1.5 py-0.5 uppercase">
+                    {selectedMonth}
+                  </span>
+                )}
               </div>
-              <div>
-                <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-[0.2em] font-sans">
-                  মোট আয় / জমা (Inflow)
+              <div className="mt-3">
+                <p className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">
+                  মোট জমা (Inflow)
                 </p>
-                <p className="text-2xl font-mono font-black text-slate-900 mt-1">
+                <p className="text-xl font-mono font-black text-slate-900 mt-0.5">
                   ৳{stats.inflow.toLocaleString()}
                 </p>
-                <p className="text-[10px] text-emerald-600 flex items-center gap-1 font-medium mt-0.5">
-                  <TrendingUp size={12} />
-                  টাকা অফিসে আসছে
+                <p className="text-[9px] text-emerald-600 font-medium mt-0.5 flex items-center gap-1">
+                  <TrendingUp size={10} />
+                  অফিসে জমা
                 </p>
               </div>
-              {selectedMonth !== "All" && (
-                <span className="absolute bottom-4 right-4 text-[9px] font-bold text-slate-400 bg-slate-50 border border-slate-100 rounded px-2 py-0.5 uppercase">
-                  {selectedMonth}
-                </span>
-              )}
             </motion.div>
 
             {/* Total Outflow Cash */}
             <motion.div
               whileHover={{ y: -3 }}
-              className="bg-white border border-slate-200/50 rounded-[2rem] p-6 shadow-sm flex items-center gap-4 relative overflow-hidden group"
+              className="bg-white border border-slate-200/50 rounded-2xl p-5 shadow-sm flex flex-col justify-between relative overflow-hidden group"
             >
-              <div className="absolute top-0 right-0 w-24 h-24 bg-rose-50 rounded-full blur-2xl -mr-8 -mt-8 opacity-70 group-hover:opacity-100 transition-opacity"></div>
-              <div className="p-3 bg-rose-50 rounded-2xl text-rose-600 border border-rose-100 shadow-sm">
-                <ArrowUpRight
-                  size={22}
-                  className="group-hover:scale-110 transition-transform"
-                />
+              <div className="flex items-center justify-between">
+                <span className="p-2.5 bg-rose-50 rounded-xl text-rose-600 border border-rose-100 shadow-sm">
+                  <ArrowUpRight size={18} />
+                </span>
+                {selectedMonth !== "All" && (
+                  <span className="text-[8px] font-bold text-slate-400 bg-slate-50 border border-slate-100 rounded px-1.5 py-0.5 uppercase">
+                    {selectedMonth}
+                  </span>
+                )}
               </div>
-              <div>
-                <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-[0.2em] font-sans">
-                  মোট খরচ / প্রদান (Outflow)
+              <div className="mt-3">
+                <p className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">
+                  মোট খরচ (Outflow)
                 </p>
-                <p className="text-2xl font-mono font-black text-slate-900 mt-1">
+                <p className="text-xl font-mono font-black text-slate-900 mt-0.5">
                   ৳{stats.outflow.toLocaleString()}
                 </p>
-                <p className="text-[10px] text-rose-500 flex items-center gap-1 font-medium mt-0.5">
-                  <TrendingDown size={12} />
-                  টাকা অফিস থেকে খরচ হয়েছে
+                <p className="text-[9px] text-rose-500 font-medium mt-0.5 flex items-center gap-1">
+                  <TrendingDown size={10} />
+                  মোট ব্যয়
                 </p>
               </div>
-              {selectedMonth !== "All" && (
-                <span className="absolute bottom-4 right-4 text-[9px] font-bold text-slate-400 bg-slate-50 border border-slate-100 rounded px-2 py-0.5 uppercase">
-                  {selectedMonth}
-                </span>
-              )}
             </motion.div>
 
             {/* Net Cash Balance */}
             <motion.div
               whileHover={{ y: -3 }}
-              className="bg-white border border-slate-200/50 rounded-[2rem] p-6 shadow-sm flex items-center gap-4 relative overflow-hidden group"
+              className="bg-white border border-slate-200/50 rounded-2xl p-5 shadow-sm flex flex-col justify-between relative overflow-hidden group"
             >
-              <div className="absolute top-0 right-0 w-24 h-24 bg-blue-50 rounded-full blur-2xl -mr-8 -mt-8 opacity-70 group-hover:opacity-100 transition-opacity"></div>
-              <div className="p-3 bg-blue-50 rounded-2xl text-blue-600 border border-blue-100 shadow-sm">
-                <Wallet
-                  size={22}
-                  className="group-hover:scale-110 transition-transform"
-                />
+              <div className="flex items-center justify-between">
+                <span className="p-2.5 bg-blue-50 rounded-xl text-blue-600 border border-blue-100 shadow-sm">
+                  <Wallet size={18} />
+                </span>
+                {selectedMonth !== "All" && (
+                  <span className="text-[8px] font-bold text-slate-400 bg-slate-50 border border-slate-100 rounded px-1.5 py-0.5 uppercase">
+                    {selectedMonth}
+                  </span>
+                )}
               </div>
-              <div>
-                <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-[0.2em] font-sans">
-                  হাতে ক্যাশ ব্যালেন্স (Cash on Hand)
+              <div className="mt-3">
+                <p className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">
+                  হাতে ক্যাশ (Balance)
                 </p>
                 <p
-                  className={`text-2xl font-mono font-black mt-1 ${stats.balance >= 0 ? "text-blue-900" : "text-rose-600"}`}
+                  className={`text-xl font-mono font-black mt-0.5 ${stats.balance >= 0 ? "text-blue-900" : "text-rose-600"}`}
                 >
                   ৳{stats.balance.toLocaleString()}
                 </p>
-                <p className="text-[10px] text-slate-500 flex items-center gap-1 font-medium mt-0.5">
-                  <Sparkles size={11} className="text-blue-500" />
-                  নীট বর্তমান ক্যাশ ব্যালেন্স
+                <p className="text-[9px] text-slate-500 font-medium mt-0.5 flex items-center gap-1">
+                  <Sparkles size={10} className="text-blue-500" />
+                  বর্তমান উদ্বৃত্ত
                 </p>
               </div>
-              {selectedMonth !== "All" && (
-                <span className="absolute bottom-4 right-4 text-[9px] font-bold text-slate-400 bg-slate-50 border border-slate-100 rounded px-2 py-0.5 uppercase">
-                  {selectedMonth}
-                </span>
-              )}
             </motion.div>
 
-            {/* Total Medical Commissions Paid */}
+            {/* Boss Total Taken */}
             <motion.div
               whileHover={{ y: -3 }}
-              className="bg-white border border-slate-200/50 rounded-[2rem] p-6 shadow-sm flex items-center gap-4 relative overflow-hidden group border-r-4 border-r-amber-500"
+              className="bg-amber-50/40 border border-amber-200/80 rounded-2xl p-5 shadow-sm flex flex-col justify-between relative overflow-hidden group cursor-pointer"
+              onClick={() => setActiveView("person-tracker")}
             >
-              <div className="absolute top-0 right-0 w-24 h-24 bg-amber-50/70 rounded-full blur-2xl -mr-8 -mt-8 opacity-70 group-hover:opacity-100 transition-opacity"></div>
-              <div className="p-3 bg-amber-50 rounded-2xl text-amber-600 border border-amber-100 shadow-sm">
-                <Award
-                  size={22}
-                  className="group-hover:scale-110 transition-transform"
-                />
-              </div>
-              <div>
-                <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-[0.2em] font-sans">
-                  মেডিক্যাল কমিশন পরিশোধ (Medical Commissions Paid)
-                </p>
-                <p className="text-2xl font-mono font-black text-slate-900 mt-1">
-                  ৳{stats.medicalCommission.toLocaleString()}
-                </p>
-                <p className="text-[10px] text-amber-600 flex items-center gap-1 font-medium mt-0.5">
-                  <Stethoscope size={11} />
-                  {selectedMonth === "All"
-                    ? "সকল সময়ের মোট কমিশন"
-                    : "চলতি মাসের কমিশন প্রদান"}
-                </p>
-              </div>
-              {selectedMonth !== "All" && (
-                <span className="absolute bottom-4 right-4 text-[9px] font-bold text-slate-400 bg-slate-50 border border-slate-100 rounded px-2 py-0.5 uppercase">
-                  {selectedMonth}
+              <div className="flex items-center justify-between">
+                <span className="p-2.5 bg-amber-100 rounded-xl text-amber-700 border border-amber-200 shadow-sm">
+                  👑
                 </span>
-              )}
+                <span className="text-[8px] font-extrabold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded uppercase">
+                  বসের উত্তোলন
+                </span>
+              </div>
+              <div className="mt-3">
+                <p className="text-[9px] font-extrabold text-amber-900 uppercase tracking-wider">
+                  বস কত টাকা নিছে
+                </p>
+                <p className="text-xl font-mono font-black text-amber-900 mt-0.5">
+                  ৳{stats.bossWithdrawn.toLocaleString()}
+                </p>
+                <p className="text-[9px] text-amber-700 font-bold mt-0.5">
+                  ক্লিক করে বিস্তারিত দেখুন →
+                </p>
+              </div>
+            </motion.div>
+
+            {/* Total Medical Test Cost */}
+            <motion.div
+              whileHover={{ y: -3 }}
+              className="bg-sky-50/40 border border-sky-200/80 rounded-2xl p-5 shadow-sm flex flex-col justify-between relative overflow-hidden group cursor-pointer"
+              onClick={() => setActiveView("person-tracker")}
+            >
+              <div className="flex items-center justify-between">
+                <span className="p-2.5 bg-sky-100 rounded-xl text-sky-700 border border-sky-200 shadow-sm">
+                  <Stethoscope size={18} />
+                </span>
+                <span className="text-[8px] font-extrabold text-sky-800 bg-sky-100 px-1.5 py-0.5 rounded uppercase">
+                  মেডিকেল খরচ
+                </span>
+              </div>
+              <div className="mt-3">
+                <p className="text-[9px] font-extrabold text-sky-900 uppercase tracking-wider">
+                  কত টাকার মেডিকেল
+                </p>
+                <p className="text-xl font-mono font-black text-sky-900 mt-0.5">
+                  ৳{stats.medicalCost.toLocaleString()}
+                </p>
+                <p className="text-[9px] text-sky-700 font-bold mt-0.5">
+                  কমিশন: ৳{stats.medicalCommission.toLocaleString()}
+                </p>
+              </div>
+            </motion.div>
+
+            {/* Staff Cash Handed Out */}
+            <motion.div
+              whileHover={{ y: -3 }}
+              className="bg-purple-50/40 border border-purple-200/80 rounded-2xl p-5 shadow-sm flex flex-col justify-between relative overflow-hidden group cursor-pointer"
+              onClick={() => setActiveView("person-tracker")}
+            >
+              <div className="flex items-center justify-between">
+                <span className="p-2.5 bg-purple-100 rounded-xl text-purple-700 border border-purple-200 shadow-sm">
+                  <Users size={18} />
+                </span>
+                <span className="text-[8px] font-extrabold text-purple-800 bg-purple-100 px-1.5 py-0.5 rounded uppercase">
+                  স্টাফের টাকা
+                </span>
+              </div>
+              <div className="mt-3">
+                <p className="text-[9px] font-extrabold text-purple-900 uppercase tracking-wider">
+                  স্টাফ কত টাকা নিল
+                </p>
+                <p className="text-xl font-mono font-black text-purple-900 mt-0.5">
+                  ৳{stats.staffOutflow.toLocaleString()}
+                </p>
+                <p className="text-[9px] text-purple-700 font-bold mt-0.5">
+                  আহাদ ও অন্যান্য স্টাফ
+                </p>
+              </div>
             </motion.div>
           </div>
 
@@ -1337,6 +1790,48 @@ export default function LedgerManagement() {
                     </button>
                   )}
                 </div>
+
+                {/* Category Filter */}
+                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
+                  <Filter size={13} className="text-slate-400" />
+                  <select
+                    value={filterCategory}
+                    onChange={(e) => setFilterCategory(e.target.value)}
+                    className="bg-transparent text-xs font-semibold text-slate-600 outline-none cursor-pointer max-w-[150px] truncate"
+                  >
+                    <option value="All">সকল খাত (All Categories)</option>
+                    <optgroup label="Income Categories">
+                      {incomeCategories.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Expense Categories">
+                      {expenseCategories.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </optgroup>
+                    <option value="Other">অন্যান্য (Other)</option>
+                  </select>
+                </div>
+
+                {/* Person / Staff / Boss Filter */}
+                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
+                  <User size={13} className="text-slate-400" />
+                  <select
+                    value={filterPerson}
+                    onChange={(e) => setFilterPerson(e.target.value)}
+                    className="bg-transparent text-xs font-semibold text-slate-600 outline-none cursor-pointer max-w-[160px] truncate"
+                  >
+                    <option value="All">ব্যক্তি/স্টাফ ফিল্টার (সবাই)</option>
+                    <option value="Boss">👑 বস / মালিক (Boss)</option>
+                    <option value="Staff">👥 সকল স্টাফ (All Staff)</option>
+                    {staffList.map((s) => (
+                      <option key={s.id || s.name} value={s.name}>
+                        {s.name} ({s.designation || s.role})
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
 
@@ -1456,27 +1951,55 @@ export default function LedgerManagement() {
                         </td>
                         <td className="py-4 px-6 font-bold text-slate-800">
                           <div>{tx.purpose}</div>
-                          {tx.isMedicalVoucher && (
-                            <div className="flex flex-wrap gap-1 mt-1 font-sans">
-                              {tx.passengerName && (
-                                <span className="inline-flex items-center gap-0.5 text-[8px] bg-sky-50 text-sky-700 border border-sky-100 px-1 py-0.2 rounded font-black max-w-[120px] truncate">
-                                  যাত্রী: {tx.passengerName}
-                                </span>
-                              )}
-                              {tx.medicalReferenceName && (
-                                <span className="inline-flex items-center gap-0.5 text-[8px] bg-indigo-50 text-indigo-700 border border-indigo-100 px-1 py-0.2 rounded font-black max-w-[120px] truncate">
-                                  রেফ: {tx.medicalReferenceName}
-                                </span>
-                              )}
-                              {tx.medicalCommission !== undefined &&
-                                tx.medicalCommission > 0 && (
-                                  <span className="inline-flex items-center gap-0.5 text-[8px] bg-amber-50 text-amber-700 border border-amber-100 px-1 py-0.2 rounded font-mono font-bold">
-                                    কমিশন: ৳
-                                    {tx.medicalCommission.toLocaleString()}
+
+                          {/* Recipient / Accountability Badges */}
+                          <div className="flex flex-wrap gap-1 mt-1 font-sans">
+                            {tx.recipientType === "Boss" ||
+                            (tx.personName &&
+                              (tx.personName.includes("বস") ||
+                                tx.personName.toLowerCase().includes("boss"))) ? (
+                              <span className="inline-flex items-center gap-0.5 text-[8px] bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded-md font-black">
+                                👑 বস / মালিক
+                              </span>
+                            ) : tx.personName ? (
+                              <span className="inline-flex items-center gap-0.5 text-[8px] bg-purple-50 text-purple-700 border border-purple-200 px-1.5 py-0.5 rounded-md font-bold">
+                                👤 {tx.personName}
+                              </span>
+                            ) : null}
+
+                            {tx.isMedicalVoucher && (
+                              <>
+                                {tx.passengerName && (
+                                  <span className="inline-flex items-center gap-0.5 text-[8px] bg-sky-50 text-sky-700 border border-sky-100 px-1 py-0.2 rounded font-black max-w-[120px] truncate">
+                                    যাত্রী: {tx.passengerName}
                                   </span>
                                 )}
-                            </div>
-                          )}
+                                {tx.medicalReferenceName && (
+                                  <span className="inline-flex items-center gap-0.5 text-[8px] bg-indigo-50 text-indigo-700 border border-indigo-100 px-1 py-0.2 rounded font-black max-w-[120px] truncate">
+                                    রেফ: {tx.medicalReferenceName}
+                                  </span>
+                                )}
+                                {tx.medicalCenter && (
+                                  <span className="inline-flex items-center gap-0.5 text-[8px] bg-teal-50 text-teal-700 border border-teal-100 px-1 py-0.2 rounded font-medium max-w-[120px] truncate">
+                                    🏥 {tx.medicalCenter}
+                                  </span>
+                                )}
+                                {tx.medicalCost !== undefined &&
+                                  tx.medicalCost > 0 && (
+                                    <span className="inline-flex items-center gap-0.5 text-[8px] bg-sky-50 text-sky-800 border border-sky-200 px-1 py-0.2 rounded font-mono font-bold">
+                                      মেডিকেল: ৳{tx.medicalCost.toLocaleString()}
+                                    </span>
+                                  )}
+                                {tx.medicalCommission !== undefined &&
+                                  tx.medicalCommission > 0 && (
+                                    <span className="inline-flex items-center gap-0.5 text-[8px] bg-amber-50 text-amber-700 border border-amber-100 px-1 py-0.2 rounded font-mono font-bold">
+                                      কমিশন: ৳
+                                      {tx.medicalCommission.toLocaleString()}
+                                    </span>
+                                  )}
+                              </>
+                            )}
+                          </div>
                         </td>
                         <td className="py-4 px-6 text-slate-500 font-medium italic">
                           {tx.remarks || (
@@ -1534,6 +2057,425 @@ export default function LedgerManagement() {
             </div>
           </div>
         </>
+      ) : activeView === "person-tracker" ? (
+        /* Person & Boss Accountability Tracker View */
+        <div id="person-boss-tracker-view" className="space-y-6">
+          {/* Top Banner */}
+          <div className="bg-white border border-slate-200/60 rounded-[2rem] p-6 shadow-sm flex flex-col md:flex-row gap-5 items-center justify-between">
+            <div className="flex items-start gap-3.5 flex-1">
+              <span className="p-3 bg-purple-50 border border-purple-100/50 text-purple-600 rounded-2xl shadow-sm inline-block mt-0.5">
+                <Users size={20} />
+              </span>
+              <div className="space-y-1">
+                <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest font-sans">
+                  ব্যক্তিভিত্তিক হিসাব ও জবাবদিহিতা (Person & Boss Accountability Tracker)
+                </h4>
+                <p className="text-xs text-slate-500 leading-relaxed max-w-2xl font-medium">
+                  আহাদ কত টাকা নিল, কত টাকার মেডিকেল করালো, এবং বস কত টাকা নিয়েছে — প্রত্যেক ব্যক্তি ও স্টাফের হিসাব খাতা ও ভাউচার তালিকা। এখানে যেকোনো স্টাফ বা ব্যক্তির নামের পাশে ক্লিক করে তাদের বিস্তারিত ভাউচার খতিয়ে দেখতে পারেন।
+                </p>
+              </div>
+            </div>
+
+            {/* Filter controls */}
+            <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
+              <div className="relative w-full sm:w-64">
+                <Search size={14} className="absolute left-3.5 top-3 text-slate-400" />
+                <input
+                  type="text"
+                  value={personSearchQuery}
+                  onChange={(e) => setPersonSearchQuery(e.target.value)}
+                  placeholder="নাম বা ভাউচার খুঁজুন (যেমন: আহাদ)..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs outline-none focus:border-blue-500 font-bold"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 w-full sm:w-auto">
+                <CalendarDays size={14} className="text-slate-400" />
+                <select
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  className="bg-transparent text-xs font-bold text-slate-700 outline-none cursor-pointer"
+                >
+                  <option value="All">সকল মাস (All Months)</option>
+                  {monthOptions.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  window.print();
+                }}
+                className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap"
+              >
+                <Printer size={13} />
+                প্রিন্ট রিপোর্ট
+              </button>
+            </div>
+          </div>
+
+          {/* 4 KPI Summary Cards for Accountability */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Card 1: Boss Taken */}
+            <div className="bg-amber-50/50 border border-amber-200/80 p-5 rounded-2xl shadow-sm flex items-center gap-4 relative overflow-hidden">
+              <div className="p-3 bg-amber-100 text-amber-800 rounded-2xl border border-amber-200 shadow-sm text-lg">
+                👑
+              </div>
+              <div>
+                <span className="text-[9px] font-extrabold text-amber-800 uppercase tracking-widest block font-sans">
+                  বস কত টাকা নিছে (Boss Taken)
+                </span>
+                <p className="text-xl font-mono font-black text-amber-900 mt-0.5">
+                  ৳{stats.bossWithdrawn.toLocaleString()}
+                </p>
+                <span className="text-[9px] text-amber-700 font-medium mt-0.5 block">
+                  বসের উত্তোলন ও ক্যাশ ড্রইং
+                </span>
+              </div>
+            </div>
+
+            {/* Card 2: Medical Cost */}
+            <div className="bg-sky-50/50 border border-sky-200/80 p-5 rounded-2xl shadow-sm flex items-center gap-4 relative overflow-hidden">
+              <div className="p-3 bg-sky-100 text-sky-800 rounded-2xl border border-sky-200 shadow-sm">
+                <Stethoscope size={20} />
+              </div>
+              <div>
+                <span className="text-[9px] font-extrabold text-sky-800 uppercase tracking-widest block font-sans">
+                  কত টাকার মেডিকেল (Medicals)
+                </span>
+                <p className="text-xl font-mono font-black text-sky-900 mt-0.5">
+                  ৳{stats.medicalCost.toLocaleString()}
+                </p>
+                <span className="text-[9px] text-sky-700 font-medium mt-0.5 block">
+                  রেফারেন্স কমিশন: ৳{stats.medicalCommission.toLocaleString()}
+                </span>
+              </div>
+            </div>
+
+            {/* Card 3: Staff Outflow */}
+            <div className="bg-purple-50/50 border border-purple-200/80 p-5 rounded-2xl shadow-sm flex items-center gap-4 relative overflow-hidden">
+              <div className="p-3 bg-purple-100 text-purple-800 rounded-2xl border border-purple-200 shadow-sm">
+                <ArrowUpRight size={20} />
+              </div>
+              <div>
+                <span className="text-[9px] font-extrabold text-purple-800 uppercase tracking-widest block font-sans">
+                  স্টাফ ও অন্যান্যদের খরচ (Outflow)
+                </span>
+                <p className="text-xl font-mono font-black text-purple-900 mt-0.5">
+                  ৳{stats.staffOutflow.toLocaleString()}
+                </p>
+                <span className="text-[9px] text-purple-700 font-medium mt-0.5 block">
+                  আহাদ ও অন্যান্যদের দেওয়া অফিসের টাকা
+                </span>
+              </div>
+            </div>
+
+            {/* Card 4: Staff Inflow */}
+            <div className="bg-emerald-50/50 border border-emerald-200/80 p-5 rounded-2xl shadow-sm flex items-center gap-4 relative overflow-hidden">
+              <div className="p-3 bg-emerald-100 text-emerald-800 rounded-2xl border border-emerald-200 shadow-sm">
+                <ArrowDownLeft size={20} />
+              </div>
+              <div>
+                <span className="text-[9px] font-extrabold text-emerald-800 uppercase tracking-widest block font-sans">
+                  স্টাফদের ফেরত/জমা (Inflow)
+                </span>
+                <p className="text-xl font-mono font-black text-emerald-900 mt-0.5">
+                  ৳{stats.staffInflow.toLocaleString()}
+                </p>
+                <span className="text-[9px] text-emerald-700 font-medium mt-0.5 block">
+                  স্টাফদের থেকে অফিসে জমা হওয়া টাকা
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Persons List & Details Cards */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between px-2">
+              <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                <UserCheck size={16} className="text-blue-600" />
+                ব্যক্তিভিত্তিক হিসাব বিবরণী (Person-wise Statements)
+              </h3>
+              <span className="text-[10px] text-slate-400 font-bold">
+                মোট {filteredPersonsLedgerData.length} জন অন্তর্ভুক্ত
+              </span>
+            </div>
+
+            {filteredPersonsLedgerData.length === 0 ? (
+              <div className="bg-white border border-slate-200/60 rounded-3xl p-12 text-center text-slate-400 space-y-2">
+                <Users size={32} className="mx-auto text-slate-300 opacity-60" />
+                <p className="text-xs font-bold text-slate-600">কোন ব্যক্তির হিসাব খুঁজে পাওয়া যায়নি</p>
+                <p className="text-[10px] text-slate-400">
+                  নতুন ভাউচার যোগ করার সময় "টাকা কার খাতে / কে নিল" অপশন থেকে স্টাফ, বস বা ব্যক্তির নাম নির্বাচন করুন।
+                </p>
+              </div>
+            ) : (
+              filteredPersonsLedgerData.map((person) => {
+                const isExpanded = expandedPersonKey === person.key;
+                const isBoss = person.role === "Boss";
+                return (
+                  <div
+                    key={person.key}
+                    className={`bg-white border rounded-[2rem] shadow-sm transition-all overflow-hidden ${
+                      isBoss
+                        ? "border-amber-200/80 bg-gradient-to-r from-white via-white to-amber-50/20"
+                        : "border-slate-200/60 hover:border-slate-300"
+                    }`}
+                  >
+                    {/* Header bar of Person Card */}
+                    <div className="p-5 md:p-6 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+                      <div className="flex items-center gap-3.5 min-w-0">
+                        <div
+                          className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-sm border ${
+                            isBoss
+                              ? "bg-amber-100 text-amber-800 border-amber-200 text-xl"
+                              : person.role === "Staff"
+                                ? "bg-purple-50 text-purple-700 border-purple-100"
+                                : person.role === "Passenger"
+                                  ? "bg-sky-50 text-sky-700 border-sky-100"
+                                  : "bg-slate-100 text-slate-600 border-slate-200"
+                          }`}
+                        >
+                          {isBoss ? (
+                            "👑"
+                          ) : person.role === "Staff" ? (
+                            <Users size={20} />
+                          ) : person.role === "Passenger" ? (
+                            <User size={20} />
+                          ) : (
+                            <User size={20} />
+                          )}
+                        </div>
+
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="text-sm font-black text-slate-900 truncate">
+                              {person.name}
+                            </h4>
+                            <span
+                              className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
+                                isBoss
+                                  ? "bg-amber-100 text-amber-800 border border-amber-200"
+                                  : person.role === "Staff"
+                                    ? "bg-purple-100 text-purple-700 border border-purple-200"
+                                    : person.role === "Passenger"
+                                      ? "bg-sky-100 text-sky-700 border border-sky-200"
+                                      : "bg-slate-100 text-slate-600 border border-slate-200"
+                              }`}
+                            >
+                              {isBoss
+                                ? "👑 বস / মালিক"
+                                : person.role === "Staff"
+                                  ? "অফিস স্টাফ"
+                                  : person.role === "Passenger"
+                                    ? "যাত্রী"
+                                    : "ব্যক্তি / পার্টনার"}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-slate-450 mt-0.5 font-medium">
+                            মোট ভাউচার সংখ্যা: <strong className="text-slate-700">{person.vouchers.length} টি</strong>
+                            {person.medicalsCount > 0 && (
+                              <span className="ml-2 text-sky-700 font-bold">
+                                • মেডিকেল করিয়েছে: {person.medicalsCount} টি
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Right stats and expand button */}
+                      <div className="flex items-center flex-wrap gap-2.5 w-full lg:w-auto justify-between lg:justify-end">
+                        {/* Outflow / Taken */}
+                        <div className="bg-rose-50/70 border border-rose-100 px-3.5 py-2 rounded-xl text-center min-w-[100px]">
+                          <span className="text-[8px] font-black text-rose-600 uppercase tracking-wider block">
+                            টাকা নিয়েছে (Outflow)
+                          </span>
+                          <span className="font-mono text-xs font-black text-rose-700">
+                            ৳{person.totalTaken.toLocaleString()}
+                          </span>
+                        </div>
+
+                        {/* Inflow / Deposited */}
+                        <div className="bg-emerald-50/70 border border-emerald-100 px-3.5 py-2 rounded-xl text-center min-w-[100px]">
+                          <span className="text-[8px] font-black text-emerald-600 uppercase tracking-wider block">
+                            টাকা দিয়েছে (Inflow)
+                          </span>
+                          <span className="font-mono text-xs font-black text-emerald-700">
+                            ৳{person.totalDeposited.toLocaleString()}
+                          </span>
+                        </div>
+
+                        {/* Net Balance */}
+                        <div className="bg-slate-50 border border-slate-200 px-3.5 py-2 rounded-xl text-center min-w-[100px]">
+                          <span className="text-[8px] font-black text-slate-500 uppercase tracking-wider block">
+                            নীট স্থিতি (Balance)
+                          </span>
+                          <span
+                            className={`font-mono text-xs font-black ${
+                              person.netBalance >= 0 ? "text-blue-700" : "text-rose-600"
+                            }`}
+                          >
+                            ৳{person.netBalance.toLocaleString()}
+                          </span>
+                        </div>
+
+                        {/* Expand / Collapse Button */}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedPersonKey(isExpanded ? null : person.key)
+                          }
+                          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                            isExpanded
+                              ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                              : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200"
+                          }`}
+                        >
+                          <span>ভাউচার ({person.vouchers.length})</span>
+                          {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Expanded Voucher Table */}
+                    <AnimatePresence>
+                      {isExpanded && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: "auto" }}
+                          exit={{ opacity: 0, height: 0 }}
+                          className="border-t border-slate-150 bg-slate-50/50 overflow-hidden"
+                        >
+                          <div className="p-4 md:p-6 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <h5 className="text-[11px] font-black text-slate-800 uppercase tracking-wider">
+                                {person.name} - এর বিস্তারিত ভাউচার খাতা
+                              </h5>
+                              {person.totalMedicalCost > 0 && (
+                                <div className="flex items-center gap-2 text-[10px]">
+                                  <span className="bg-sky-100 text-sky-800 px-2 py-0.5 rounded font-bold">
+                                    মোট মেডিকেল খরচ: ৳{person.totalMedicalCost.toLocaleString()}
+                                  </span>
+                                  {person.totalCommission > 0 && (
+                                    <span className="bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-bold">
+                                      মোট কমিশন: ৳{person.totalCommission.toLocaleString()}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+
+                            {person.vouchers.length === 0 ? (
+                              <p className="text-xs text-slate-400 py-4 italic text-center">
+                                এই ব্যক্তির নামে নির্দিষ্ট কোন ভাউচার এন্ট্রি পাওয়া যায়নি।
+                              </p>
+                            ) : (
+                              <div className="overflow-x-auto rounded-xl border border-slate-200/80 bg-white">
+                                <table className="w-full text-left border-collapse text-[11px]">
+                                  <thead>
+                                    <tr className="bg-slate-50 border-b border-slate-200 text-[9px] font-extrabold uppercase tracking-wider text-slate-500">
+                                      <th className="py-2.5 px-4">তারিখ</th>
+                                      <th className="py-2.5 px-3 text-center">লেনদেন ধরণ</th>
+                                      <th className="py-2.5 px-4">উদ্দেশ্য / খাত</th>
+                                      <th className="py-2.5 px-4">যাত্রী / মেডিকেল তথ্য</th>
+                                      <th className="py-2.5 px-4">মন্তব্য</th>
+                                      <th className="py-2.5 px-4 text-right">টাকার পরিমাণ</th>
+                                      <th className="py-2.5 px-3 text-center">অ্যাকশন</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100">
+                                    {person.vouchers.map((v) => (
+                                      <tr key={v.id || Math.random()} className="hover:bg-slate-50/60 transition-colors">
+                                        <td className="py-3 px-4 font-mono font-medium text-slate-600 whitespace-nowrap">
+                                          {v.date}
+                                        </td>
+                                        <td className="py-3 px-3 text-center">
+                                          <span
+                                            className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[9px] font-black ${
+                                              v.type === "Inflow"
+                                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                                : "bg-rose-50 text-rose-700 border border-rose-200"
+                                            }`}
+                                          >
+                                            {v.type === "Inflow" ? "আয় (In)" : "ব্যয় (Out)"}
+                                          </span>
+                                        </td>
+                                        <td className="py-3 px-4 font-bold text-slate-800">
+                                          {v.purpose}
+                                        </td>
+                                        <td className="py-3 px-4">
+                                          {v.isMedicalVoucher ? (
+                                            <div className="flex flex-wrap gap-1 font-sans">
+                                              {v.passengerName && (
+                                                <span className="text-[8px] bg-sky-50 text-sky-700 border border-sky-100 px-1 py-0.2 rounded font-black">
+                                                  যাত্রী: {v.passengerName}
+                                                </span>
+                                              )}
+                                              {v.medicalCenter && (
+                                                <span className="text-[8px] bg-teal-50 text-teal-700 border border-teal-100 px-1 py-0.2 rounded font-medium">
+                                                  🏥 {v.medicalCenter}
+                                                </span>
+                                              )}
+                                              {v.medicalCost !== undefined && v.medicalCost > 0 && (
+                                                <span className="text-[8px] bg-sky-50 text-sky-800 border border-sky-200 px-1 py-0.2 rounded font-mono font-bold">
+                                                  মেডিকেল: ৳{v.medicalCost.toLocaleString()}
+                                                </span>
+                                              )}
+                                              {v.medicalCommission !== undefined && v.medicalCommission > 0 && (
+                                                <span className="text-[8px] bg-amber-50 text-amber-800 border border-amber-200 px-1 py-0.2 rounded font-mono font-bold">
+                                                  কমিশন: ৳{v.medicalCommission.toLocaleString()}
+                                                </span>
+                                              )}
+                                            </div>
+                                          ) : (
+                                            <span className="text-slate-350 text-[10px]">-</span>
+                                          )}
+                                        </td>
+                                        <td className="py-3 px-4 text-slate-500 font-medium italic text-[10px] max-w-[150px] truncate">
+                                          {v.remarks || "-"}
+                                        </td>
+                                        <td className="py-3 px-4 text-right whitespace-nowrap">
+                                          <span
+                                            className={`font-mono text-xs font-black ${
+                                              v.type === "Inflow" ? "text-emerald-600" : "text-rose-600"
+                                            }`}
+                                          >
+                                            {v.type === "Inflow" ? "+" : "-"}৳{v.amount.toLocaleString()}
+                                          </span>
+                                        </td>
+                                        <td className="py-3 px-3 text-center">
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setEditingTx(v);
+                                              setIsModalOpen(true);
+                                            }}
+                                            className="p-1 px-1.5 border border-slate-200 hover:border-blue-400 hover:bg-blue-50 text-slate-500 hover:text-blue-600 rounded transition-colors cursor-pointer"
+                                            title="সম্পাদনা করুন"
+                                          >
+                                            <Edit2 size={11} />
+                                          </button>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
       ) : (
         /* Custom Medical Commissions Report View */
         <div id="medical-commission-statement-view" className="space-y-6">
@@ -2372,6 +3314,153 @@ export default function LedgerManagement() {
                   </div>
                 </div>
 
+                {/* 2b. Recipient / Accountability Section (আহাদ কত নিল, বস কত নিল) */}
+                <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wider block flex items-center gap-1.5">
+                      <User size={13} className="text-blue-600" />
+                      টাকা কার খাতে / কে নিল বা দিল? (Person / Accountability)
+                    </label>
+                    {formRecipientType && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormRecipientType("");
+                          setFormPersonName("");
+                          setFormStaffId("");
+                        }}
+                        className="text-[10px] text-slate-400 hover:text-slate-600 cursor-pointer font-bold"
+                      >
+                        রিসেট
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormRecipientType("Boss");
+                        setFormPersonName("বস / মালিক (Boss)");
+                        setFormStaffId("");
+                      }}
+                      className={`py-2 px-3 rounded-xl text-xs font-bold transition-all border flex items-center justify-center gap-1 cursor-pointer ${
+                        formRecipientType === "Boss"
+                          ? "bg-amber-500 text-white border-amber-600 shadow-sm"
+                          : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
+                      }`}
+                    >
+                      <span>👑</span>
+                      <span>বস (Boss)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormRecipientType("Staff");
+                        if (!formStaffId && staffList.length > 0) {
+                          setFormStaffId(staffList[0].id || "");
+                          setFormPersonName(staffList[0].name);
+                        }
+                      }}
+                      className={`py-2 px-3 rounded-xl text-xs font-bold transition-all border flex items-center justify-center gap-1 cursor-pointer ${
+                        formRecipientType === "Staff"
+                          ? "bg-purple-600 text-white border-purple-700 shadow-sm"
+                          : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
+                      }`}
+                    >
+                      <Users size={12} />
+                      <span>স্টাফ (Staff)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormRecipientType("Passenger");
+                        setFormStaffId("");
+                      }}
+                      className={`py-2 px-3 rounded-xl text-xs font-bold transition-all border flex items-center justify-center gap-1 cursor-pointer ${
+                        formRecipientType === "Passenger"
+                          ? "bg-sky-600 text-white border-sky-700 shadow-sm"
+                          : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
+                      }`}
+                    >
+                      <span>🎫</span>
+                      <span>যাত্রী</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormRecipientType("Other");
+                        setFormStaffId("");
+                      }}
+                      className={`py-2 px-3 rounded-xl text-xs font-bold transition-all border flex items-center justify-center gap-1 cursor-pointer ${
+                        formRecipientType === "Other"
+                          ? "bg-slate-700 text-white border-slate-800 shadow-sm"
+                          : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
+                      }`}
+                    >
+                      <User size={12} />
+                      <span>অন্যান্য</span>
+                    </button>
+                  </div>
+
+                  {/* If Staff is selected */}
+                  {formRecipientType === "Staff" && (
+                    <div className="space-y-2 pt-2 border-t border-slate-200/60">
+                      <label className="text-[10px] font-bold text-purple-700 uppercase tracking-wider block">
+                        স্টাফ নির্বাচন করুন (Select Staff - e.g. আহাদ)
+                      </label>
+                      <select
+                        value={formStaffId}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setFormStaffId(val);
+                          if (val === "custom") {
+                            setFormPersonName("");
+                          } else {
+                            const s = staffList.find((st) => st.id === val);
+                            if (s) setFormPersonName(s.name);
+                          }
+                        }}
+                        className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs outline-none focus:border-purple-500 font-bold text-slate-800"
+                      >
+                        <option value="">স্টাফ তালিকা থেকে বেছে নিন...</option>
+                        {staffList.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name} ({s.designation || s.role})
+                          </option>
+                        ))}
+                        <option value="custom">নতুন বা অন্য স্টাফের নাম লিখুন...</option>
+                      </select>
+                      {(formStaffId === "custom" || staffList.length === 0) && (
+                        <input
+                          type="text"
+                          value={formPersonName}
+                          onChange={(e) => setFormPersonName(e.target.value)}
+                          placeholder="স্টাফের নাম লিখুন (যেমন: আহাদ)"
+                          className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs outline-none focus:border-purple-500 font-bold"
+                        />
+                      )}
+                    </div>
+                  )}
+
+                  {/* If Passenger or Other */}
+                  {(formRecipientType === "Passenger" ||
+                    formRecipientType === "Other") && (
+                    <div className="pt-2 border-t border-slate-200/60">
+                      <input
+                        type="text"
+                        value={formPersonName}
+                        onChange={(e) => setFormPersonName(e.target.value)}
+                        placeholder="ব্যক্তি, গ্রাহক বা প্রতিষ্ঠানের নাম লিখুন..."
+                        className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs outline-none focus:border-blue-500 font-bold"
+                      />
+                    </div>
+                  )}
+                </div>
+
                 {/* 3. Purpose Selection */}
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-[0.2em] block">
@@ -2814,6 +3903,42 @@ export default function LedgerManagement() {
                           <span className="absolute left-3 top-2.5 font-bold text-slate-400 text-xs">
                             ৳
                           </span>
+                        </div>
+                      </div>
+
+                      {/* Medical Center & Actual Medical Cost */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-slate-200/50">
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">
+                            মেডিকেল সেন্টার (Medical Center)
+                          </label>
+                          <input
+                            type="text"
+                            value={formMedicalCenter}
+                            onChange={(e) => setFormMedicalCenter(e.target.value)}
+                            placeholder="যেমন: গুলশান মেডিকেয়ার, আল-নাহিয়ান"
+                            className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs outline-none focus:border-blue-500 font-medium"
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">
+                            মেডিকেল খরচ (Actual Medical Cost BDT)
+                          </label>
+                          <div className="relative">
+                            <input
+                              type="number"
+                              value={formMedicalCost}
+                              onChange={(e) => setFormMedicalCost(e.target.value)}
+                              placeholder="0.00"
+                              min="0"
+                              step="any"
+                              className="w-full bg-white border border-slate-200 rounded-xl p-2.5 pl-8 text-xs font-mono font-bold outline-none focus:border-blue-500"
+                            />
+                            <span className="absolute left-3 top-2.5 font-bold text-slate-400 text-xs">
+                              ৳
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </motion.div>

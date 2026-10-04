@@ -1,15 +1,18 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Passenger,
   PassengerStatus,
   PassengerDoc,
   PassengerType,
+  DuplicateCheckResult,
+  BranchId,
 } from "../types/passenger";
 import { PassengerService } from "../services/passengerService";
 import { AgencyService } from "../services/agencyService";
 import { Agency } from "../types/agency";
 import { useAuth } from "./AuthProvider";
-import { X, Send, Camera } from "lucide-react";
+import { useBranch } from "../contexts/BranchContext";
+import { X, Send, Camera, AlertCircle, Plane, Building2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import FileUploader from "./FileUploader";
 import PassengerHistory from "./PassengerHistory";
@@ -20,6 +23,9 @@ interface Props {
   onClose: () => void;
   initialData?: Passenger;
   nextSl?: number;
+  passengers?: Passenger[];
+  defaultBranch?: BranchId;
+  onSelectPassenger?: (passenger: Passenger) => void;
 }
 
 const JOB_SUMMARIES: Record<string, string> = {
@@ -33,8 +39,19 @@ const JOB_SUMMARIES: Record<string, string> = {
   "WELDER": "Joining metal parts using various welding techniques. Interpreting blueprints and ensuring work meets safety and quality standards."
 };
 
-export default function PassengerForm({ onClose, initialData, nextSl }: Props) {
+export default function PassengerForm({
+  onClose,
+  initialData,
+  nextSl,
+  passengers,
+  defaultBranch,
+  onSelectPassenger,
+}: Props) {
   const { user } = useAuth();
+  const { currentBranch } = useBranch();
+  const effectiveBranch: BranchId =
+    initialData?.branch || defaultBranch || currentBranch || "nextrip";
+
   const [activeTab, setActiveTab] = useState<
     "profile" | "cv" | "history" | "documents"
   >("profile");
@@ -54,13 +71,14 @@ export default function PassengerForm({ onClose, initialData, nextSl }: Props) {
     initialData?.tradeName ? !Object.keys(JOB_SUMMARIES).includes(initialData.tradeName) : false
   );
   
-  const [duplicateInfo, setDuplicateInfo] = useState<{ show: boolean, duplicateSl?: number | string | null } | null>(null);
+  const [duplicateInfo, setDuplicateInfo] = useState<DuplicateCheckResult | null>(null);
 
   const [formData, setFormData] = useState<Partial<Passenger>>(
     initialData || {
       sl: 0,
       name: "",
       passportNumber: "",
+      branch: effectiveBranch,
       inOut: "Out",
       phone: "",
       companyName: "",
@@ -76,16 +94,43 @@ export default function PassengerForm({ onClose, initialData, nextSl }: Props) {
     },
   );
 
+  const targetBranch = formData.branch || effectiveBranch;
+
+  const nextAvailableSl = useMemo(() => {
+    if (!passengers || passengers.length === 0) return nextSl || 1;
+    const existing = passengers
+      .filter((p) =>
+        targetBranch === "diabari"
+          ? p.branch === "diabari"
+          : !p.branch || p.branch === "nextrip",
+      )
+      .map((p) => Number(p.sl))
+      .filter((s) => !isNaN(s) && s < 1000000);
+    return existing.length > 0 ? Math.max(...existing) + 1 : 1;
+  }, [passengers, nextSl, targetBranch]);
+
+  const slCollision = useMemo(() => {
+    if (!formData.sl || !passengers) return null;
+    return passengers.find(
+      (p) =>
+        (targetBranch === "diabari"
+          ? p.branch === "diabari"
+          : !p.branch || p.branch === "nextrip") &&
+        Number(p.sl) === Number(formData.sl) &&
+        p.id !== initialData?.id,
+    );
+  }, [formData?.sl, targetBranch, passengers, initialData?.id]);
+
   useEffect(() => {
     const unsubscribe = AgencyService.subscribeToAgencies(setAgencies);
     return () => unsubscribe();
   }, []);
 
   useEffect(() => {
-    if (!initialData && nextSl && (formData.sl === 0 || !formData.sl)) {
-      setFormData((prev) => ({ ...prev, sl: nextSl }));
+    if (!initialData && (formData.sl === 0 || !formData.sl)) {
+      setFormData((prev) => ({ ...prev, sl: nextAvailableSl }));
     }
-  }, [nextSl, initialData]);
+  }, [nextAvailableSl, initialData]);
 
   const statusOptions: PassengerStatus[] = [
     "Passport Submit",
@@ -188,11 +233,14 @@ export default function PassengerForm({ onClose, initialData, nextSl }: Props) {
 
     if (formData.passportNumber) {
       setLoading(true);
-      const duplicateResult = await PassengerService.checkDuplicatePassport(formData.passportNumber, initialData?.id);
+      const duplicateResult = await PassengerService.checkDuplicatePassport(
+        formData.passportNumber,
+        initialData?.id,
+      );
       setLoading(false);
-      
+
       if (duplicateResult.isDuplicate) {
-        setDuplicateInfo({ show: true, duplicateSl: duplicateResult.duplicateSl });
+        setDuplicateInfo(duplicateResult);
         return;
       }
     }
@@ -269,32 +317,114 @@ export default function PassengerForm({ onClose, initialData, nextSl }: Props) {
       animate={{ opacity: 1, y: 0, scale: 1 }}
       className="bg-white rounded-t-[2rem] sm:rounded-[2rem] p-5 sm:p-8 lg:p-10 w-full max-w-xl max-h-[92vh] sm:max-h-[90vh] overflow-y-auto border border-slate-200/60 shadow-2xl relative z-10 scrollbar-hide"
     >
-      {duplicateInfo?.show && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+      {duplicateInfo?.isDuplicate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-2xl shadow-xl border border-rose-100 p-6 max-w-md w-full text-center"
+            className="bg-white rounded-2xl shadow-2xl border border-rose-100 p-6 max-w-lg w-full text-left"
           >
-            <div className="w-16 h-16 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center shrink-0">
+                <AlertCircle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">ডুপ্লিকেট পাসপোর্ট সনাক্ত হয়েছে</h3>
+                <p className="text-xs text-slate-500 font-mono">
+                  পাসপোর্ট নম্বর: <span className="font-bold text-rose-600">{formData.passportNumber?.toUpperCase()}</span>
+                </p>
+              </div>
             </div>
-            <h3 className="text-xl font-bold text-slate-900 mb-2">Duplicate Passport</h3>
-            <p className="text-slate-600 mb-6">
-              This passport number already exists in the system.
-              <br />
-              <span className="font-bold text-slate-900 mt-2 block">
-                Duplicate ID: #{duplicateInfo.duplicateSl?.toString().padStart(3, "0") || "---"}
-              </span>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-4 space-y-2 text-xs">
+              <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                <span className="text-slate-500 font-medium">বিদ্যমান যাত্রীর নাম:</span>
+                <span className="font-bold text-slate-900 text-sm">{duplicateInfo.duplicateName || "N/A"}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 font-medium">সিরিয়াল নম্বর (SL):</span>
+                <span className="font-bold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded border border-blue-200">
+                  #{duplicateInfo.duplicateSl?.toString().padStart(3, "0") || "---"}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 font-medium">বর্তমান স্ট্যাটাস:</span>
+                <span className="font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded border border-emerald-200">
+                  {duplicateInfo.duplicateStatus || "N/A"}
+                </span>
+              </div>
+              {duplicateInfo.duplicateBranch && (
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 font-medium">শাখা / অফিস:</span>
+                  <span className="font-bold text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded border border-indigo-200">
+                    {duplicateInfo.duplicateBranch}
+                  </span>
+                </div>
+              )}
+              {duplicateInfo.duplicateCountry && (
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 font-medium">গন্তব্য দেশ:</span>
+                  <span className="font-medium text-slate-800">{duplicateInfo.duplicateCountry}</span>
+                </div>
+              )}
+              {duplicateInfo.duplicateDate && (
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 font-medium">এন্ট্রির তারিখ:</span>
+                  <span className="font-medium text-slate-800">{duplicateInfo.duplicateDate}</span>
+                </div>
+              )}
+              {duplicateInfo.duplicateAgent && (
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 font-medium">এজেন্ট / রেফারেন্স:</span>
+                  <span className="font-medium text-slate-800">{duplicateInfo.duplicateAgent}</span>
+                </div>
+              )}
+              {duplicateInfo.isLocalOnly && (
+                <div className="mt-2 p-2 bg-amber-50 border border-amber-200 text-amber-900 rounded-lg text-[11px] leading-relaxed">
+                  ⚠️ <strong>অফলাইন ড্রাফট তথ্য:</strong> এটি স্থানীয় ব্রাউজার ক্যাশে সংরক্ষিত রয়েছে কিন্তু সার্ভারে এখনো নিশ্চিত হয়নি।
+                </div>
+              )}
+            </div>
+
+            <p className="text-xs text-slate-600 mb-5 leading-relaxed">
+              সিস্টেম ডেটাবেজের সুরক্ষা বজায় রাখতে একই পাসপোর্ট নম্বর দুইবার যুক্ত হতে দেয় না। আপনি বিদ্যমান এই যাত্রীর রেকর্ড সরাসরি খুলে প্রয়োজনীয় তথ্য আপডেট করতে পারেন।
             </p>
-            <div className="flex justify-center gap-3">
+
+            <div className="flex flex-col sm:flex-row gap-2.5 justify-end">
+              {duplicateInfo.isLocalOnly && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (formData.passportNumber) {
+                      PassengerService.purgeLocalDraft(formData.passportNumber);
+                    }
+                    setDuplicateInfo(null);
+                  }}
+                  className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl transition-all"
+                >
+                  ক্যাশ ড্রাফট ক্লিয়ার করুন
+                </button>
+              )}
+              {duplicateInfo.duplicatePassenger && onSelectPassenger && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const p = duplicateInfo.duplicatePassenger!;
+                    setDuplicateInfo(null);
+                    onClose();
+                    onSelectPassenger(p);
+                  }}
+                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all shadow-sm"
+                >
+                  বিদ্যমান যাত্রী ওপেন করুন (View/Edit)
+                </button>
+              )}
               <button
+                type="button"
                 onClick={() => setDuplicateInfo(null)}
-                className="px-6 py-2.5 bg-slate-900 text-white text-sm font-bold rounded-xl hover:bg-slate-800 transition-colors"
+                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all"
               >
-                Understood
+                বন্ধ করুন
               </button>
             </div>
           </motion.div>
@@ -361,19 +491,90 @@ export default function PassengerForm({ onClose, initialData, nextSl }: Props) {
             />
           </div>
 
+          {/* Branch / Office Selector */}
+          <div className="col-span-2 bg-gradient-to-r from-slate-50 to-slate-100/70 dark:bg-slate-800/60 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-700/80">
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-[10px] font-sans font-bold text-slate-500 dark:text-slate-400 uppercase tracking-[0.15em] block">
+                অফিস / শাখা নির্ধারণ (Assigned Branch / Office) *
+              </label>
+              <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                {formData.branch === "diabari" ? "🏛️ দিয়াবাড়ী হেড অফিস ক্লাইন্ট" : "✈️ নেক্সট্রিপ ক্লাইন্ট"}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setFormData((prev) => ({ ...prev, branch: "nextrip" }));
+                }}
+                className={`py-2.5 px-4 rounded-xl border text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                  formData.branch !== "diabari"
+                    ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/25 ring-2 ring-blue-500/20"
+                    : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
+                }`}
+              >
+                <Plane size={15} />
+                <span>নেক্সট্রিপ (NexTrip)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setFormData((prev) => ({ ...prev, branch: "diabari" }));
+                }}
+                className={`py-2.5 px-4 rounded-xl border text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                  formData.branch === "diabari"
+                    ? "bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-500/25 ring-2 ring-emerald-500/20"
+                    : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
+                }`}
+              >
+                <Building2 size={15} />
+                <span>দিয়াবাড়ী - হেড অফিস (RL2572)</span>
+              </button>
+            </div>
+          </div>
+
           <div className="col-span-2 md:col-span-1">
-            <label className="text-[10px] font-sans font-bold text-slate-400 uppercase tracking-[0.15em] mb-1.5 block">
-              Serial Number (SL)
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-[10px] font-sans font-bold text-slate-400 uppercase tracking-[0.15em] block">
+                Serial Number (SL)
+              </label>
+              {formData.sl !== nextAvailableSl && (
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, sl: nextAvailableSl })}
+                  className="text-[10px] font-bold text-blue-600 hover:text-blue-800 transition-colors"
+                >
+                  পরবর্তী খালি: #{nextAvailableSl}
+                </button>
+              )}
+            </div>
             <input
               required
               type="number"
-              className="w-full bg-blue-50 border border-blue-200 rounded-2xl p-3.5 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/5 outline-none transition-all text-sm font-bold text-blue-700"
+              className={`w-full border rounded-2xl p-3.5 focus:bg-white focus:ring-4 outline-none transition-all text-sm font-bold ${
+                slCollision
+                  ? "bg-amber-50 border-amber-300 text-amber-900 focus:border-amber-500 focus:ring-amber-500/10"
+                  : "bg-blue-50 border-blue-200 text-blue-700 focus:border-blue-500 focus:ring-blue-500/5"
+              }`}
               value={formData.sl || ""}
               onChange={(e) =>
                 setFormData({ ...formData, sl: parseInt(e.target.value) || 0 })
               }
             />
+            {slCollision && (
+              <div className="mt-1.5 p-2 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-900 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                <span>
+                  ⚠️ সিরিয়াল <strong>#{formData.sl}</strong> ইতোমধ্যে <strong>"{slCollision.name}"</strong>-এর নামে সংরক্ষিত!
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, sl: nextAvailableSl })}
+                  className="font-bold text-blue-700 hover:text-blue-900 underline text-left sm:text-right shrink-0 cursor-pointer"
+                >
+                  খালি #{nextAvailableSl} নিন
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="col-span-2 md:col-span-1">
@@ -509,9 +710,12 @@ export default function PassengerForm({ onClose, initialData, nextSl }: Props) {
               }
             >
               <option value="">Select Country</option>
-              {["ALGERIA", "MARITIUS", "SAUDI ARABIA", "QATAR", "BAHRAIN", "KUWET", "MALAYSHIA"].map(c => (
+              {["ALGERIA", "MARITIUS", "SAUDI ARABIA", "QATAR", "BAHRAIN", "KUWET", "MALAYSHIA", "VIETNAM"].map(c => (
                 <option key={c} value={c}>{c}</option>
               ))}
+              {formData.country && !["ALGERIA", "MARITIUS", "SAUDI ARABIA", "QATAR", "BAHRAIN", "KUWET", "MALAYSHIA", "VIETNAM"].includes(formData.country) && (
+                <option value={formData.country}>{formData.country}</option>
+              )}
             </select>
           </div>
 

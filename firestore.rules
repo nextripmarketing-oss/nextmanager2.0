@@ -52,7 +52,8 @@ service cloud.firestore {
              (!('status' in data) || data.status in statusOptions) &&
              (!('inOut' in data) || data.inOut == null || data.inOut is string) &&
              (!('history' in data) || data.history == null || data.history is list) &&
-             (!('country' in data) || data.country == null || data.country is string);
+             (!('country' in data) || data.country == null || data.country is string) &&
+             (!('branch' in data) || data.branch == null || data.branch in ["nextrip", "diabari"]);
     }
 
     // GLOBAL DENY
@@ -186,7 +187,13 @@ service cloud.firestore {
                             incoming().type in ["Inflow", "Outflow"] &&
                             incoming().amount is number &&
                             incoming().purpose is string &&
-                            incoming().createdByUid is string;
+                            incoming().createdByUid is string &&
+                            (!('branch' in incoming()) || incoming().branch in ["nextrip", "diabari"]) &&
+                            (!('recipientType' in incoming()) || incoming().recipientType in ["Staff", "Boss", "Passenger", "Agent", "Other"]) &&
+                            (!('personName' in incoming()) || incoming().personName is string) &&
+                            (!('staffId' in incoming()) || incoming().staffId is string) &&
+                            (!('medicalCost' in incoming()) || incoming().medicalCost is number) &&
+                            (!('medicalCenter' in incoming()) || incoming().medicalCenter is string);
       allow delete: if isSignedIn();
     }
 

@@ -8,4 +8,5 @@ export interface UserProfile {
   createdAt: string;
   allowedTabs?: string[];
   mappedAgentName?: string;
+  branch?: "nextrip" | "diabari" | "all";
 }

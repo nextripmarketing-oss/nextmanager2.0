@@ -78,6 +78,12 @@ export const LedgerService = {
                 ? data.createdAt.toDate().toISOString()
                 : data.createdAt
               : undefined,
+            branch: (data.branch as any) || "nextrip",
+            recipientType: data.recipientType || undefined,
+            personName: data.personName || undefined,
+            staffId: data.staffId || undefined,
+            medicalCost: data.medicalCost !== undefined ? Number(data.medicalCost) : undefined,
+            medicalCenter: data.medicalCenter || undefined,
             isMedicalVoucher: data.isMedicalVoucher || false,
             medicalReferenceId: data.medicalReferenceId || "",
             medicalReferenceName: data.medicalReferenceName || "",

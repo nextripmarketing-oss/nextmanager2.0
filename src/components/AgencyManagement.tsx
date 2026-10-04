@@ -169,15 +169,16 @@ export default function AgencyManagement() {
       return;
     }
 
-    const payload = {
+    const payload: any = {
       name: agencyName.trim(),
       phone: agencyPhone.trim(),
-      email: agencyEmail.trim() || undefined,
-      address: agencyAddress.trim() || undefined,
-      remarks: agencyRemarks.trim() || undefined,
       createdByUid: user.uid,
       createdByEmail: user.email || "unknown@nextrip.com",
     };
+
+    if (agencyEmail.trim()) payload.email = agencyEmail.trim();
+    if (agencyAddress.trim()) payload.address = agencyAddress.trim();
+    if (agencyRemarks.trim()) payload.remarks = agencyRemarks.trim();
 
     try {
       if (editingAgency && editingAgency.id) {
@@ -246,17 +247,17 @@ export default function AgencyManagement() {
     const matchedAgency = agencies.find((a) => a.id === logAgencyId);
     if (!matchedAgency) return;
 
-    const payload = {
+    const payload: any = {
       agencyId: logAgencyId,
       agencyName: matchedAgency.name,
       direction: logDirection,
       passportCount: countNum,
       description: logDescription.trim(),
       date: logDate,
-      remarks: logRemarks.trim() || undefined,
       createdByUid: user.uid,
       createdByEmail: user.email || "unknown@nextrip.com",
     };
+    if (logRemarks.trim()) payload.remarks = logRemarks.trim();
 
     try {
       await AgencyService.addPassportLog(payload);

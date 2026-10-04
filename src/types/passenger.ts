@@ -49,11 +49,30 @@ export interface RequiredDocument {
   lastUpdated?: string;
 }
 
+export type BranchId = "nextrip" | "diabari";
+
+export interface DuplicateCheckResult {
+  isDuplicate: boolean;
+  duplicateSl?: number;
+  duplicateName?: string;
+  duplicatePassport?: string;
+  duplicateStatus?: string;
+  duplicateCountry?: string;
+  duplicateDate?: string;
+  duplicateAgent?: string;
+  duplicateId?: string;
+  duplicatePassenger?: Passenger;
+  duplicateBranch?: BranchId | string;
+  source?: "firestore" | "local";
+  isLocalOnly?: boolean;
+}
+
 export interface Passenger {
   id?: string;
   sl?: number;
   name: string;
   passportNumber?: string;
+  branch?: BranchId;
   photoUrl?: string;
   inOut: "In" | "Out" | string;
   companyName?: string;

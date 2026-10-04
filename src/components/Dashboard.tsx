@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useAuth } from "./AuthProvider";
 import PassengerList from "./PassengerList";
 import PassengerForm from "./PassengerForm";
@@ -53,9 +53,20 @@ import { pastedCSV } from "../data/pasted_passengers";
 import { LedgerService } from "../services/ledgerService";
 import GlobalSearch from "./GlobalSearch";
 import { CashTransaction } from "../types/ledger";
+import { useBranch } from "../contexts/BranchContext";
+import BranchSelectorModal from "./BranchSelectorModal";
+import BranchSwitcherPill from "./BranchSwitcherPill";
 
 export default function Dashboard() {
   const { user, profile, logout, isAdmin } = useAuth();
+  const {
+    currentBranch,
+    setBranch,
+    branchMeta,
+    openBranchModal,
+    filterPassengers,
+    filterTransactions,
+  } = useBranch();
   const [passengers, setPassengers] = useState<Passenger[]>([]);
   const [transactions, setTransactions] = useState<CashTransaction[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -164,12 +175,21 @@ export default function Dashboard() {
     setEditingPassenger(undefined);
   };
 
+  // Branch-scoped passengers and transactions
+  const branchScopedPassengers = useMemo(() => {
+    return filterPassengers(passengers);
+  }, [passengers, filterPassengers]);
+
+  const branchScopedTransactions = useMemo(() => {
+    return filterTransactions(transactions);
+  }, [transactions, filterTransactions]);
+
   const nextSl = React.useMemo(() => {
-    const validSls = passengers
+    const validSls = branchScopedPassengers
       .map((p) => Number(p.sl))
       .filter((sl) => !isNaN(sl) && sl < 1000000);
     return validSls.length > 0 ? Math.max(...validSls) + 1 : 1;
-  }, [passengers]);
+  }, [branchScopedPassengers]);
 
   const handleCSVImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -295,6 +315,92 @@ export default function Dashboard() {
     }
   };
 
+  const duplicateSlCount = useMemo(() => {
+    const slMap = new Map<number, number>();
+    passengers.forEach((p) => {
+      const sl = Number(p.sl);
+      if (sl && !isNaN(sl)) {
+        slMap.set(sl, (slMap.get(sl) || 0) + 1);
+      }
+    });
+    let duplicates = 0;
+    slMap.forEach((count) => {
+      if (count > 1) duplicates += count - 1;
+    });
+    return duplicates;
+  }, [passengers]);
+
+  const duplicatePassportCount = useMemo(() => {
+    const pMap = new Map<string, number>();
+    passengers.forEach((p) => {
+      const pNum = (p.passportNumber || "").trim().toUpperCase();
+      if (pNum) {
+        pMap.set(pNum, (pMap.get(pNum) || 0) + 1);
+      }
+    });
+    let duplicates = 0;
+    pMap.forEach((count) => {
+      if (count > 1) duplicates += count - 1;
+    });
+    return duplicates;
+  }, [passengers]);
+
+  const handleFixDuplicateSerials = async () => {
+    if (!user) return;
+    const confirmFix = window.confirm(
+      `আপনি কি সমস্ত যাত্রীর ডুপ্লিকেট সিরিয়াল নম্বরগুলো ক্রমানুসারে (Sequential & Unique) মেরামত করতে চান?`,
+    );
+    if (!confirmFix) return;
+
+    try {
+      setIsHealing(true);
+      const sorted = [...passengers].sort((a, b) => {
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        if (dateA && dateB) return dateA - dateB;
+        return (Number(a.sl) || 0) - (Number(b.sl) || 0);
+      });
+
+      const usedSls = new Set<number>();
+      let resequencedCount = 0;
+      let currentSeq = 1;
+
+      for (const p of sorted) {
+        if (!p.id) continue;
+        const currentSl = Number(p.sl);
+        if (!currentSl || usedSls.has(currentSl) || isNaN(currentSl)) {
+          while (usedSls.has(currentSeq)) {
+            currentSeq++;
+          }
+          await PassengerService.updatePassenger(p.id, { sl: currentSeq });
+          usedSls.add(currentSeq);
+          currentSeq++;
+          resequencedCount++;
+        } else {
+          usedSls.add(currentSl);
+          if (currentSl >= currentSeq) {
+            currentSeq = currentSl + 1;
+          }
+        }
+      }
+
+      PassengerService.clearLocalCache();
+      alert(
+        `সিরিয়াল মেরামত সম্পন্ন হয়েছে! মোট ${resequencedCount} জন যাত্রীর সিরিয়াল নম্বর অদ্বিতীয় ও ক্রমানুসারে সাজানো হয়েছে।`,
+      );
+    } catch (err: any) {
+      console.error("Fix Duplicate Serials Error:", err);
+      alert("সিরিয়াল মেরামত ব্যর্থ হয়েছে: " + err.message);
+    } finally {
+      setIsHealing(false);
+    }
+  };
+
+  const handleClearCacheAndResync = () => {
+    PassengerService.clearLocalCache();
+    alert("লোকাল ক্যাশ মেমোরি ক্লিয়ার করা হয়েছে। সার্ভারের সর্বশেষ ডেটা সিঙ্ক করা হচ্ছে।");
+  };
+
   const handleSyncToGoogleScript = async () => {
     if (!googleScriptUrl) {
       alert("দয়া করে প্রথমে আপনার Google Apps Script Web App URL-টি দিন।");
@@ -381,15 +487,15 @@ export default function Dashboard() {
 
   const visiblePassengers = React.useMemo(() => {
     if (!isAdmin && profile?.role === "Agent" && profile.mappedAgentName) {
-      return passengers.filter(
+      return branchScopedPassengers.filter(
         (p) =>
           p.agentName === profile.mappedAgentName ||
           p.reference === profile.mappedAgentName ||
           p.delegateAgent === profile.mappedAgentName,
       );
     }
-    return passengers;
-  }, [passengers, isAdmin, profile]);
+    return branchScopedPassengers;
+  }, [branchScopedPassengers, isAdmin, profile]);
 
   const stats = {
     total: visiblePassengers.length,
@@ -440,7 +546,7 @@ export default function Dashboard() {
   const ledgerStats = React.useMemo(() => {
     let totalInflow = 0;
     let totalOutflow = 0;
-    transactions.forEach((t) => {
+    branchScopedTransactions.forEach((t) => {
       if (t.type === "Inflow") {
         totalInflow += t.amount;
       } else {
@@ -452,7 +558,7 @@ export default function Dashboard() {
       outflow: totalOutflow,
       balance: totalInflow - totalOutflow,
     };
-  }, [transactions]);
+  }, [branchScopedTransactions]);
 
   const renderContent = () => {
     switch (activeTab) {
@@ -492,6 +598,16 @@ export default function Dashboard() {
                       <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[9px] font-bold uppercase tracking-wider rounded-md">
                         System Active
                       </span>
+                      {duplicateSlCount > 0 && (
+                        <span className="px-2 py-0.5 bg-rose-100 text-rose-700 border border-rose-200 text-[10px] font-bold rounded-md">
+                          ⚠️ {duplicateSlCount}টি ডুপ্লিকেট সিরিয়াল সনাক্ত!
+                        </span>
+                      )}
+                      {duplicatePassportCount > 0 && (
+                        <span className="px-2 py-0.5 bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-bold rounded-md">
+                          ⚠️ {duplicatePassportCount}টি ডুপ্লিকেট পাসপোর্ট সনাক্ত!
+                        </span>
+                      )}
                     </div>
                     <p className="text-slate-600 text-[12px] md:text-sm mt-1">
                       {!isAlreadyImported
@@ -501,11 +617,30 @@ export default function Dashboard() {
                     <p className="text-slate-400 text-[10px] uppercase font-mono tracking-widest mt-0.5">
                       {!isAlreadyImported
                         ? "Status: 164 records waiting for DB write"
-                        : "Status: Database synced intact ● No corruption detected"}
+                        : duplicateSlCount > 0
+                          ? `Alert: ${duplicateSlCount} duplicate serial number(s) found in registry`
+                          : "Status: Database synced intact ● No corruption detected"}
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2.5 w-full md:w-auto self-stretch md:self-auto justify-end">
+                <div className="flex items-center gap-2.5 w-full md:w-auto self-stretch md:self-auto justify-end flex-wrap">
+                  {duplicateSlCount > 0 && (
+                    <button
+                      onClick={handleFixDuplicateSerials}
+                      disabled={isHealing}
+                      className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-rose-600 hover:bg-rose-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold font-display uppercase tracking-wider transition-all shadow-md active:scale-95 disabled:opacity-50 cursor-pointer"
+                    >
+                      <Sparkles size={14} className="text-rose-200" />
+                      সিরিয়াল ঠিক করুন ({duplicateSlCount})
+                    </button>
+                  )}
+                  <button
+                    onClick={handleClearCacheAndResync}
+                    className="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 px-3.5 py-2.5 rounded-xl text-xs font-semibold font-display transition-all cursor-pointer"
+                    title="স্থানীয় ব্রাউজার ক্যাশ ক্লিয়ার করে সার্ভার থেকে ফ্রেশ ডেটা আনুন"
+                  >
+                    ক্যাশ রিফ্রেশ
+                  </button>
                   {!isAlreadyImported && (
                     <button
                       onClick={handlePastedCSVImport}
@@ -699,7 +834,7 @@ export default function Dashboard() {
                       </button>
                     </div>
                     <div className="bento-card p-6 overflow-hidden !rounded-2xl bg-white border border-slate-200">
-                      {transactions.length === 0 ? (
+                      {branchScopedTransactions.length === 0 ? (
                         <div className="py-8 text-center text-slate-400 text-xs font-light">
                           কোন লেজার ট্রানজেকশন খুঁজে পাওয়া যায়নি।
                         </div>
@@ -722,7 +857,7 @@ export default function Dashboard() {
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                              {transactions.slice(0, 5).map((tx) => (
+                              {branchScopedTransactions.slice(0, 5).map((tx) => (
                                 <tr
                                   key={tx.id}
                                   className="hover:bg-slate-50/50 transition-colors"
@@ -1313,7 +1448,7 @@ export default function Dashboard() {
       `}
       >
         <div className="p-8">
-          <div className="flex items-center justify-between mb-10">
+          <div className="flex items-center justify-between mb-6">
             <div
               className="flex items-center gap-3 overflow-hidden cursor-pointer"
               onClick={() => {
@@ -1334,6 +1469,38 @@ export default function Dashboard() {
             >
               <Plus className="rotate-45" size={20} />
             </button>
+          </div>
+
+          {/* Active Branch Selector in Sidebar */}
+          <div
+            onClick={openBranchModal}
+            className={`mb-6 p-3.5 rounded-2xl border cursor-pointer transition-all shadow-sm ${
+              currentBranch === "diabari"
+                ? "bg-emerald-950/60 border-emerald-500/40 hover:bg-emerald-900/50"
+                : "bg-blue-950/60 border-blue-500/40 hover:bg-blue-900/50"
+            }`}
+          >
+            <div className="flex items-center justify-between text-[10px] uppercase font-bold tracking-wider text-slate-400">
+              <span>কর্মক্ষেত্র (Workspace)</span>
+              <span className="text-[10px] text-blue-400 font-bold hover:underline">বদলান</span>
+            </div>
+            <div className="flex items-center gap-2 mt-2">
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  currentBranch === "diabari"
+                    ? "bg-emerald-400 animate-pulse"
+                    : "bg-blue-400 animate-pulse"
+                }`}
+              />
+              <span className="font-bold text-xs text-white truncate">
+                {branchMeta.bengaliName}
+              </span>
+            </div>
+            {currentBranch === "diabari" && (
+              <span className="inline-block mt-1 text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-black">
+                হেড অফিস (RL2572)
+              </span>
+            )}
           </div>
 
           <nav className="space-y-4">
@@ -1438,9 +1605,8 @@ export default function Dashboard() {
             )}
             <div className="pt-6 border-t border-slate-800/50">
               <a
-                href="http://nextrip.pro.bd/"
-                target="_blank"
-                rel="noopener noreferrer"
+                href="/app.apk"
+                download="NexTrip-ERP.apk"
                 className="flex items-center gap-3 px-4 py-3 rounded-xl transition-all cursor-pointer font-medium mb-2 bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30"
               >
                 <Download size={20} />
@@ -1511,11 +1677,12 @@ export default function Dashboard() {
           </div>
 
           <GlobalSearch
-            passengers={passengers}
+            passengers={branchScopedPassengers}
             onSelectPassenger={handleEdit}
           />
 
           <div className="flex items-center gap-1.5 sm:gap-4">
+            <BranchSwitcherPill />
             <button
               onClick={toggleTheme}
               className="p-2.5 rounded-xl bg-slate-100/80 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-100 transition-all border border-slate-200/60 dark:border-slate-700/60"
@@ -1637,9 +1804,15 @@ export default function Dashboard() {
               onClose={closeForm}
               initialData={editingPassenger}
               nextSl={nextSl}
+              passengers={passengers}
+              defaultBranch={currentBranch}
+              onSelectPassenger={handleEdit}
             />
           </div>
         )}
+
+        {/* Global Workspace / Branch Selector Modal */}
+        <BranchSelectorModal />
 
         {showScriptCode && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">

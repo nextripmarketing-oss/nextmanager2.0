@@ -97,15 +97,26 @@ export const PDFService = {
     doc.setFont("helvetica", "normal"); // Reset
 
     // Table
-    const tableData = transactions.map((tx, index) => [
-      index + 1,
-      tx.date,
-      tx.type,
-      `BDT ${tx.amount.toLocaleString()}`,
-      tx.purpose || "N/A",
-      tx.remarks || "N/A",
-      (tx.createdByEmail || "").split("@")[0] || "N/A",
-    ]);
+    const tableData = transactions.map((tx, index) => {
+      let purposeDisplay = tx.purpose || "N/A";
+      if (tx.isMedicalVoucher && tx.passengerName) {
+        purposeDisplay += ` (Medical: ${tx.passengerName}${tx.medicalCost ? ` - Cost: ${tx.medicalCost}` : ""})`;
+      }
+      const personDisplay = tx.recipientType === "Boss" 
+        ? "Boss (মালিক)" 
+        : (tx.personName || tx.medicalReferenceName || "-");
+
+      return [
+        index + 1,
+        tx.date,
+        tx.type,
+        `BDT ${tx.amount.toLocaleString()}`,
+        purposeDisplay,
+        personDisplay,
+        tx.remarks || "N/A",
+        (tx.createdByEmail || "").split("@")[0] || "N/A",
+      ];
+    });
 
     autoTable(doc, {
       startY: 90,
@@ -116,6 +127,7 @@ export const PDFService = {
           "Type",
           "Amount",
           "Category / Purpose",
+          "Handed To / Person",
           "Remarks",
           "User",
         ],

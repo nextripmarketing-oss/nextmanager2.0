@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
-import { Passenger, PassengerStatus } from "../types/passenger";
+import { useState, useEffect, useMemo } from "react";
+import { Passenger, PassengerStatus, BranchId } from "../types/passenger";
 import { PassengerService } from "../services/passengerService";
+import { useBranch } from "../contexts/BranchContext";
 import {
   Search,
   Edit3,
@@ -14,6 +15,9 @@ import {
   User,
   QrCode,
   AlertTriangle,
+  Building2,
+  Plane,
+  Filter,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "./AuthProvider";
@@ -113,6 +117,13 @@ export default function PassengerList({
   hideControls = false,
 }: Props) {
   const { isAdmin, user, profile } = useAuth();
+  const { currentBranch, filterPassengers, branchMeta } = useBranch();
+  const [branchFilter, setBranchFilter] = useState<BranchId | "all">(currentBranch);
+
+  useEffect(() => {
+    setBranchFilter(currentBranch);
+  }, [currentBranch]);
+
   const [passengers, setPassengers] = useState<Passenger[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -165,11 +176,16 @@ export default function PassengerList({
     return unsubscribe;
   }, []);
 
+  // Filter passengers strictly by branch (unless admin overrides to 'all')
+  const branchScopedPassengers = useMemo(() => {
+    return filterPassengers(passengers, branchFilter);
+  }, [passengers, branchFilter, filterPassengers]);
+
   const suggestions =
     searchTerm.length >= 1
       ? Array.from(
           new Set(
-            passengers
+            branchScopedPassengers
               .filter((p) =>
                 p.name.toLowerCase().includes(searchTerm.toLowerCase()),
               )
@@ -178,12 +194,12 @@ export default function PassengerList({
         ).slice(0, 5)
       : [];
 
-  const uniqueAgents = Array.from(new Set(passengers.map((p) => p.agentName || "").filter(Boolean))).sort();
-  const uniqueDelegates = Array.from(new Set(passengers.map((p) => p.delegateAgent || "").filter(Boolean))).sort();
-  const uniqueReferences = Array.from(new Set(passengers.map((p) => p.reference || "").filter(Boolean))).sort();
-  const uniqueTrades = Array.from(new Set(passengers.map((p) => p.tradeName || "").filter(Boolean))).sort();
+  const uniqueAgents = Array.from(new Set(branchScopedPassengers.map((p) => p.agentName || "").filter(Boolean))).sort();
+  const uniqueDelegates = Array.from(new Set(branchScopedPassengers.map((p) => p.delegateAgent || "").filter(Boolean))).sort();
+  const uniqueReferences = Array.from(new Set(branchScopedPassengers.map((p) => p.reference || "").filter(Boolean))).sort();
+  const uniqueTrades = Array.from(new Set(branchScopedPassengers.map((p) => p.tradeName || "").filter(Boolean))).sort();
 
-  const baseFiltered = passengers.filter((p) => {
+  const baseFiltered = branchScopedPassengers.filter((p) => {
     // If user is an agent, restrict to only passengers under their mapped agent name
     if (
       !isAdmin &&
@@ -378,6 +394,88 @@ export default function PassengerList({
     <div className="space-y-6">
       {!hideControls && (
         <div className="flex flex-col gap-4">
+          {/* Branch Header Badge and Scope Switcher */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/70 dark:bg-slate-900/60 p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 backdrop-blur-sm">
+            <div className="flex items-center gap-3">
+              <div
+                className={`w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-sm ${
+                  branchFilter === "diabari"
+                    ? "bg-emerald-600 shadow-emerald-500/20"
+                    : branchFilter === "all"
+                    ? "bg-purple-600 shadow-purple-500/20"
+                    : "bg-blue-600 shadow-blue-500/20"
+                }`}
+              >
+                {branchFilter === "diabari" ? (
+                  <Building2 size={20} />
+                ) : branchFilter === "all" ? (
+                  <Filter size={20} />
+                ) : (
+                  <Plane size={20} />
+                )}
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white tracking-tight">
+                    {branchFilter === "diabari"
+                      ? "দিয়াবাড়ী (হেড অফিস) ক্লাইন্ট রেজিস্ট্রি"
+                      : branchFilter === "all"
+                      ? "সকল শাখা ক্লাইন্ট রেজিস্ট্রি (All Branches)"
+                      : "নেক্সট্রিপ ক্লাইন্ট রেজিস্ট্রি (NexTrip)"}
+                  </h3>
+                  {branchFilter === "diabari" && (
+                    <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-black">
+                      RL2572
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  মোট ক্লাইন্ট: <strong className="text-slate-800 dark:text-slate-200 font-bold">{filteredAndSorted.length}</strong> জন প্রদর্শিত
+                </p>
+              </div>
+            </div>
+
+            {/* Admin Branch Switcher Pill */}
+            {isAdmin && (
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200/80 dark:border-slate-700/80 self-start sm:self-center">
+                <button
+                  type="button"
+                  onClick={() => setBranchFilter("nextrip")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    branchFilter === "nextrip"
+                      ? "bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs"
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                  }`}
+                >
+                  ✈️ নেক্সট্রিপ
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBranchFilter("diabari")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    branchFilter === "diabari"
+                      ? "bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-xs"
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                  }`}
+                >
+                  🏛️ দিয়াবাড়ী (হেড অফিস)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBranchFilter("all")}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    branchFilter === "all"
+                      ? "bg-white dark:bg-slate-700 text-purple-600 dark:text-purple-400 shadow-xs"
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                  }`}
+                  title="উভয় শাখার সকল ক্লাইন্ট একসাথে দেখুন"
+                >
+                  উভয় শাখা
+                </button>
+              </div>
+            )}
+          </div>
+
           <div className="flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between">
             <div className="relative group flex-1 max-w-2xl">
               <Search
@@ -796,6 +894,11 @@ export default function PassengerList({
                             <p className="font-display font-bold text-slate-900 text-[15px] leading-tight group-hover:text-blue-700 transition-colors">
                               {p.name}
                             </p>
+                            {branchFilter === "all" && (
+                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-black ${p.branch === "diabari" ? "bg-emerald-100 text-emerald-800" : "bg-blue-100 text-blue-800"}`}>
+                                {p.branch === "diabari" ? "দিয়াবাড়ী" : "নেক্সট্রিপ"}
+                              </span>
+                            )}
                             {p.passengerType && (
                               <span className="text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded border border-slate-200">
                                 {p.passengerType}

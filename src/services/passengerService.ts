@@ -14,7 +14,7 @@ import {
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, auth, storage } from "../lib/firebase";
-import { Passenger } from "../types/passenger";
+import { Passenger, DuplicateCheckResult } from "../types/passenger";
 
 const COLLECTION_NAME = "passengers";
 
@@ -230,7 +230,7 @@ function notifyListeners() {
   });
 }
 
-const TIMEOUT_MS = 3500;
+const TIMEOUT_MS = 15000;
 
 async function executeWithTimeout<T>(
   promise: Promise<T>,
@@ -358,58 +358,185 @@ export const PassengerService = {
     }
   },
 
-  async checkDuplicatePassport(passportNumber: string, excludeId?: string): Promise<{ isDuplicate: boolean, duplicateSl?: number }> {
-    if (!passportNumber) return { isDuplicate: false };
-    
-    // Check locally first for instant feedback
-    const local = getLocalPassengers();
-    const duplicateLocal = local.find(p => 
-      p.passportNumber?.toLowerCase() === passportNumber.toLowerCase() && p.id !== excludeId
-    );
-    if (duplicateLocal) return { isDuplicate: true, duplicateSl: duplicateLocal.sl };
+  async checkDuplicatePassport(
+    passportNumber: string,
+    excludeId?: string,
+  ): Promise<DuplicateCheckResult> {
+    const cleanPassport = (passportNumber || "").trim().toUpperCase();
+    if (!cleanPassport) return { isDuplicate: false };
 
-    // Check firestore cache
-    const duplicateCache = firestorePassengers.find(p =>
-      p.passportNumber?.toLowerCase() === passportNumber.toLowerCase() && p.id !== excludeId
-    );
-    if (duplicateCache) return { isDuplicate: true, duplicateSl: duplicateCache.sl };
+    // 1. Check live Firestore in-memory cache first (most up-to-date and accurate)
+    const duplicateCache = firestorePassengers.find((p) => {
+      const pNum = (p.passportNumber || "").trim().toUpperCase();
+      return pNum === cleanPassport && p.id !== excludeId;
+    });
 
-    // Fallback to query
+    if (duplicateCache) {
+      return {
+        isDuplicate: true,
+        duplicateSl: duplicateCache.sl,
+        duplicateName: duplicateCache.name,
+        duplicatePassport: duplicateCache.passportNumber,
+        duplicateStatus: duplicateCache.status,
+        duplicateCountry: duplicateCache.country,
+        duplicateDate: duplicateCache.date,
+        duplicateAgent: duplicateCache.agentName || duplicateCache.reference,
+        duplicateId: duplicateCache.id,
+        duplicatePassenger: duplicateCache,
+        duplicateBranch: duplicateCache.branch === "diabari" ? "দিয়াবাড়ী (হেড অফিস)" : "নেক্সট্রিপ",
+        source: "firestore",
+        isLocalOnly: false,
+      };
+    }
+
+    // 2. Query Firestore directly to ensure no multi-device mismatch
     try {
       const q = query(collection(db, COLLECTION_NAME));
       const snap = await getDocs(q);
-      const duplicateDb = snap.docs.find(doc => {
+      const duplicateDb = snap.docs.find((doc) => {
         const data = doc.data();
-        return data.passportNumber?.toLowerCase() === passportNumber.toLowerCase() && doc.id !== excludeId;
+        const pNum = (data.passportNumber || "").trim().toUpperCase();
+        return pNum === cleanPassport && doc.id !== excludeId;
       });
       if (duplicateDb) {
-        return { isDuplicate: true, duplicateSl: duplicateDb.data().sl };
+        const pData = duplicateDb.data() as Passenger;
+        const fullObj: Passenger = { id: duplicateDb.id, ...pData };
+        return {
+          isDuplicate: true,
+          duplicateSl: pData.sl,
+          duplicateName: pData.name,
+          duplicatePassport: pData.passportNumber,
+          duplicateStatus: pData.status,
+          duplicateCountry: pData.country,
+          duplicateDate: pData.date,
+          duplicateAgent: pData.agentName || pData.reference,
+          duplicateId: duplicateDb.id,
+          duplicatePassenger: fullObj,
+          duplicateBranch: pData.branch === "diabari" ? "দিয়াবাড়ী (হেড অফিস)" : "নেক্সট্রিপ",
+          source: "firestore",
+          isLocalOnly: false,
+        };
       }
-      return { isDuplicate: false };
     } catch (e) {
       console.warn("Could not query DB for duplicates, relying on cache.", e);
-      return { isDuplicate: false };
     }
+
+    // 3. Check local storage ONLY for un-synced offline drafts ('local_...')
+    // Never flag deleted/stale records from localStorage as duplicates!
+    const local = getLocalPassengers();
+    const duplicateLocal = local.find((p) => {
+      const pNum = (p.passportNumber || "").trim().toUpperCase();
+      return (
+        pNum === cleanPassport &&
+        p.id !== excludeId &&
+        Boolean(p.id && p.id.startsWith("local_"))
+      );
+    });
+
+    if (duplicateLocal) {
+      return {
+        isDuplicate: true,
+        duplicateSl: duplicateLocal.sl,
+        duplicateName: duplicateLocal.name,
+        duplicatePassport: duplicateLocal.passportNumber,
+        duplicateStatus: duplicateLocal.status,
+        duplicateCountry: duplicateLocal.country,
+        duplicateDate: duplicateLocal.date,
+        duplicateAgent: duplicateLocal.agentName || duplicateLocal.reference,
+        duplicateId: duplicateLocal.id,
+        duplicatePassenger: duplicateLocal,
+        duplicateBranch: duplicateLocal.branch === "diabari" ? "দিয়াবাড়ী (হেড অফিস)" : "নেক্সট্রিপ",
+        source: "local",
+        isLocalOnly: true,
+      };
+    }
+
+    return { isDuplicate: false };
+  },
+
+  checkDuplicateSl(
+    sl: number,
+    excludeId?: string,
+  ): { isDuplicate: boolean; existingPassenger?: Passenger } {
+    if (!sl || isNaN(sl)) return { isDuplicate: false };
+    const targetSl = Number(sl);
+    const found = firestorePassengers.find(
+      (p) => Number(p.sl) === targetSl && p.id !== excludeId,
+    );
+    if (found) {
+      return { isDuplicate: true, existingPassenger: found };
+    }
+    return { isDuplicate: false };
+  },
+
+  purgeLocalDraft(passportNumberOrId: string) {
+    const clean = passportNumberOrId.trim().toUpperCase();
+    const local = getLocalPassengers();
+    const filtered = local.filter((p) => {
+      const pNum = (p.passportNumber || "").trim().toUpperCase();
+      return p.id !== passportNumberOrId && pNum !== clean;
+    });
+    saveLocalPassengers(filtered);
+    notifyListeners();
+  },
+
+  clearLocalCache() {
+    try {
+      localStorage.removeItem(LOCAL_STORAGE_KEY);
+    } catch (e) {
+      console.warn("Failed to clear cached_passengers:", e);
+    }
+    notifyListeners();
   },
 
   async addPassenger(
     passenger: Omit<Passenger, "id" | "createdAt" | "updatedAt">,
   ) {
+    // Ensure SL counting is strictly sequential and collision-free per branch
+    let assignedSl = passenger.sl;
+    const targetBranch = passenger.branch || "nextrip";
+    const existingSls = firestorePassengers
+      .filter((p) =>
+        targetBranch === "diabari"
+          ? p.branch === "diabari"
+          : !p.branch || p.branch === "nextrip",
+      )
+      .map((p) => Number(p.sl))
+      .filter((s) => !isNaN(s) && s < 1000000);
+    const maxSl = existingSls.length > 0 ? Math.max(...existingSls) : 0;
+
+    if (!assignedSl || isNaN(Number(assignedSl)) || Number(assignedSl) <= 0) {
+      assignedSl = maxSl + 1;
+    } else if (existingSls.includes(Number(assignedSl))) {
+      // If the provided SL is already occupied by another entry, assign next available SL
+      console.warn(
+        `SL #${assignedSl} is already in use by another passenger. Assigning next available SL #${maxSl + 1}`,
+      );
+      assignedSl = maxSl + 1;
+    }
+
     const cleaned = sanitizeForFirestore({
       ...passenger,
+      sl: Number(assignedSl),
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       history: passenger.history || [],
     });
 
     const firestorePromise = async () => {
-      return await addDoc(collection(db, COLLECTION_NAME), cleaned);
+      const docRef = await addDoc(collection(db, COLLECTION_NAME), cleaned);
+      // If this passenger was in local offline storage, purge it now that it is written to Firestore
+      if (passenger.passportNumber) {
+        PassengerService.purgeLocalDraft(passenger.passportNumber);
+      }
+      return docRef;
     };
 
     const fallback = () => {
       const localId = "local_" + Date.now();
       const localPassenger: Passenger = {
         ...passenger,
+        sl: Number(assignedSl),
         id: localId,
         createdAt: new Date().toISOString() as any,
         updatedAt: new Date().toISOString() as any,
@@ -534,22 +661,20 @@ export const PassengerService = {
           })) as Passenger[];
 
           const currentLocal = getLocalPassengers();
-          const pendingOnes = currentLocal.filter(
-            (p) => p.id && p.id.startsWith("local_"),
+          const firestorePassportSet = new Set(
+            firestorePassengers
+              .map((p) => (p.passportNumber || "").trim().toUpperCase())
+              .filter(Boolean),
           );
 
-          const fullCached = [...firestorePassengers];
-          pendingOnes.forEach((p) => {
-            if (
-              !fullCached.some(
-                (itm) =>
-                  itm.passportNumber === p.passportNumber || itm.id === p.id,
-              )
-            ) {
-              fullCached.push(p);
-            }
+          // Only keep local pending additions that do NOT exist in Firestore
+          const pendingOnes = currentLocal.filter((p) => {
+            if (!p.id || !p.id.startsWith("local_")) return false;
+            const pNum = (p.passportNumber || "").trim().toUpperCase();
+            return pNum ? !firestorePassportSet.has(pNum) : false;
           });
 
+          const fullCached = [...firestorePassengers, ...pendingOnes];
           saveLocalPassengers(fullCached);
           notifyListeners();
         },
