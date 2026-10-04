@@ -5,20 +5,12 @@ import {
   useState,
   ReactNode,
 } from "react";
-import {
-  User,
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  sendPasswordResetEmail,
-  signOut,
-} from "firebase/auth";
-import { auth } from "../lib/firebase";
+import { authClient, AuthUser } from "../lib/auth";
 import { UserProfile } from "../types/user";
 import { UserService } from "../services/userService";
 
 interface AuthContextType {
-  user: User | null;
+  user: AuthUser | null;
   profile: UserProfile | null;
   loading: boolean;
   isAdmin: boolean;
@@ -31,53 +23,79 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      setUser(firebaseUser);
-      if (firebaseUser) {
-        // Resolve loading state immediately so the dashboard mounts instantly
-        setLoading(false);
-        UserService.ensureUserProfile(
-          firebaseUser.uid,
-          firebaseUser.email || "",
-          firebaseUser.displayName || "Anonymous",
-        )
-          .then((userProfile) => {
-            setProfile(userProfile);
-          })
-          .catch((error) => {
-            console.error("Error ensuring user profile:", error);
-          });
-      } else {
-        setProfile(null);
-        setLoading(false);
+    // Check for existing auth session on mount
+    const initAuth = async () => {
+      const storedUser = authClient.getUser();
+      if (storedUser) {
+        setUser(storedUser);
+        // Verify token is still valid
+        const currentUser = await authClient.getCurrentUser();
+        if (currentUser) {
+          setUser(currentUser);
+          // Load user profile
+          UserService.ensureUserProfile(
+            currentUser.uid,
+            currentUser.email,
+            currentUser.displayName,
+          )
+            .then((userProfile) => {
+              setProfile(userProfile);
+            })
+            .catch((error) => {
+              console.error("Error ensuring user profile:", error);
+            });
+        } else {
+          setUser(null);
+          setProfile(null);
+        }
       }
-    });
-    return unsubscribe;
+      setLoading(false);
+    };
+
+    initAuth();
   }, []);
 
   const loginWithEmail = async (email: string, pass: string) => {
-    await signInWithEmailAndPassword(auth, email, pass);
+    const authUser = await authClient.login(email, pass);
+    setUser(authUser);
+    // Load user profile
+    const userProfile = await UserService.ensureUserProfile(
+      authUser.uid,
+      authUser.email,
+      authUser.displayName,
+    );
+    setProfile(userProfile);
   };
 
   const signUpWithEmail = async (email: string, pass: string) => {
-    await createUserWithEmailAndPassword(auth, email, pass);
+    const authUser = await authClient.signup(email, pass);
+    setUser(authUser);
+    // Load user profile
+    const userProfile = await UserService.ensureUserProfile(
+      authUser.uid,
+      authUser.email,
+      authUser.displayName,
+    );
+    setProfile(userProfile);
   };
 
   const resetPassword = async (email: string) => {
-    await sendPasswordResetEmail(auth, email);
+    await authClient.resetPassword(email);
   };
 
   const logout = async () => {
-    await signOut(auth);
+    await authClient.logout();
+    setUser(null);
+    setProfile(null);
   };
 
   const isAdmin =
-    profile?.role === "Admin" || user?.email === "nextripmarketing@gmail.com" || user?.email === "anisurkp1966@gmail.com";
+    profile?.role === "Admin" || user?.role === "Admin";
 
   return (
     <AuthContext.Provider
